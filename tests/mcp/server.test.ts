@@ -99,23 +99,36 @@ describe('MCP Server Integration', () => {
     const renderTool = result.tools.find((t: any) => t.name === 'sc_render');
     expect(renderTool).toBeDefined();
     expect(renderTool.inputSchema.required).toContain('out');
+    expect(renderTool.description).toContain('Pdef');
+    expect(renderTool.description).toContain('sc_eval');
 
     const stopTool = result.tools.find((t: any) => t.name === 'sc_stop');
     expect(stopTool).toBeDefined();
   });
 
   describe('sc_check tool', () => {
-    it('should return found message when sclang is available', async () => {
+    it('should return structured check when sclang is available', async () => {
       mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
+      vi.spyOn(MockSclangController.prototype, 'execute').mockImplementation(async (code: string) => {
+        if (code.includes('serverRunning')) {
+          return { success: true, output: '-> false' };
+        }
+        return { success: true, output: 'mocked output' };
+      });
       const callToolHandler = (server as any)._requestHandlers.get('tools/call');
-      
-      const result = await callToolHandler({
-        method: 'tools/call',
-        params: { name: 'sc_check' }
-      }, { signal: new AbortController().signal });
+
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_check' },
+        },
+        { signal: new AbortController().signal },
+      );
 
       expect(result.isError).toBeUndefined();
-      expect(result.content[0].text).toContain('/mock/path/sclang');
+      expect(result.content[0].text).toContain('sclang: OK');
+      expect(result.content[0].text).toContain('path: /mock/path/sclang');
+      expect(result.content[0].text).toContain('server: not_running');
     });
 
     it('should return error when sclang is not found', async () => {

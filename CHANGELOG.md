@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- P4 `sc_check` server probe (`server: running|not_running|unknown`) via `src/runtime/server-probe.ts`
+- CLI `check` prints `SERVER:` line; docs/smoke-troubleshooting.md for local SC issues
 - MCP `sc_logs` — tail sclang post buffer from active session
 - MCP `sc_run_file` — evaluate `.scd` file in persistent session
 - MCP `sc_render` — R1 wrapper record to WAV (`path` or `code`, `out`, `duration`)
@@ -22,12 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `record-music.js` uses shared `renderSession()` (R1 wrapper)
+- `sc_render` MCP description: Pdef/Routine duration, sc_eval for audition
+- CI no longer installs SuperCollider; CLI tests are help/structure only (mock-based)
+
+### Changed (prior)
+
 - `wrapScCode()` uses string concatenation instead of template literals (injection fix)
 - `stop()` rejects in-flight execute before shutdown; cleanup after process exit
 - Example scripts use `s.boot; s.sync;` instead of async `waitForBoot`
 
 ### Fixed
 
+- CI failure when Ubuntu runner ran real `scctl run` against headless sclang (SIGABRT)
 - `wrapScCode()` runs user code in a `fork` so `s.sync` and `.wait` work in eval/render paths
 - Execute hangs when delimiter appears on stderr
 - Concurrent `boot()` could spawn multiple sclang processes

@@ -1,29 +1,9 @@
 import { SclangController } from './dist/runtime/sclang.js';
 import { discoverSclangPath } from './dist/runtime/discover.js';
+import { renderSession } from './dist/runtime/render.js';
 import path from 'path';
 
-function escapeScString(s) {
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-async function main() {
-  const sclangPath = discoverSclangPath();
-  if (!sclangPath) {
-    console.error('sclang not found');
-    process.exit(1);
-  }
-
-  const outputWav = path.join(process.cwd(), 'music.wav');
-  console.log(`Recording output will be saved to: ${outputWav}`);
-  console.log('Booting sclang...');
-  const controller = new SclangController(sclangPath);
-  await controller.boot();
-  console.log('sclang booted successfully!');
-
-  const scCode = `
-s.boot;
-s.sync;
-
+const WARM_SAW_CODE = `
 SynthDef(\\warmSaw, { |out = 0, freq = 440, amp = 0.2, gate = 1, release = 0.3|
   var env = EnvGen.kr(Env.asr(0.01, 1, release), gate, doneAction: 2);
   var sig = Saw.ar([freq, freq * 1.008]) * env * amp;
@@ -32,12 +12,6 @@ SynthDef(\\warmSaw, { |out = 0, freq = 440, amp = 0.2, gate = 1, release = 0.3|
   Out.ar(out, sig);
 }).add;
 
-s.sync;
-
-s.prepareForRecord("${escapeScString(outputWav)}");
-s.sync;
-
-s.record;
 s.sync;
 
 Pdef(\\arpeggio, Pbind(
@@ -49,42 +23,39 @@ Pdef(\\arpeggio, Pbind(
   \\amp, 0.12,
   \\release, 0.4
 )).play;
-  `;
+`;
 
-  console.log('Sending audio synthesis & recording commands to SuperCollider...');
-  const result = await controller.execute(scCode);
+async function main() {
+  const sclangPath = discoverSclangPath();
+  if (!sclangPath) {
+    console.error('sclang not found');
+    process.exit(1);
+  }
+
+  const outputWav = path.join(process.cwd(), 'music.wav');
+  console.log(`Recording output will be saved to: ${outputWav}`);
+
+  const controller = new SclangController(sclangPath);
+  const result = await renderSession(controller, {
+    userCode: WARM_SAW_CODE,
+    outPath: outputWav,
+    durationSec: 10,
+  });
+
   if (!result.success) {
-    console.error('Execution failed:', result.output);
-    await controller.stop();
+    console.error('Render failed:', result.output);
+    console.error(`WAV: ${result.outPath} (${result.bytes} bytes)`);
     process.exit(1);
   }
-  console.log('Start execution result:', result);
 
-  console.log('Recording melody to wav file for 10 seconds...');
-  await new Promise((resolve) => setTimeout(resolve, 10000));
-
-  console.log('Stopping pattern playback and recording...');
-  const stopCode = `
-Pdef(\\arpeggio).stop;
-s.stopRecording;
-  `;
-  const stopResult = await controller.execute(stopCode);
-  if (!stopResult.success) {
-    console.error('Stop execution failed:', stopResult.output);
-    await controller.stop();
-    process.exit(1);
+  console.log(`WAV: ${result.outPath} (${result.bytes} bytes)`);
+  if (result.output.trim()) {
+    console.log(result.output);
   }
-  console.log('Stop execution result:', stopResult);
-
-  console.log('Waiting 3 seconds for file streams to flush and close...');
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-
-  console.log('Stopping sclang interpreter...');
-  await controller.stop();
   console.log('Done! Finished recording.');
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Error:', err);
   process.exit(1);
 });

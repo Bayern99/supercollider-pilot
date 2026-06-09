@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { discoverSclangPath } from './runtime/discover.js';
 import { readScdFile } from './runtime/sc-file.js';
 import { renderSession } from './runtime/render.js';
+import { probeServerWithNewController } from './runtime/server-probe.js';
 import { SclangController } from './runtime/sclang.js';
 
 const program = new Command();
@@ -15,16 +16,17 @@ program
 program
   .command('check')
   .description('Check SuperCollider installation path')
-  .action(() => {
+  .action(async () => {
     const sclangPath = discoverSclangPath();
-    if (sclangPath) {
-      console.log('STATUS: OK');
-      console.log(`PATH: ${sclangPath}`);
-    } else {
+    if (!sclangPath) {
       console.log('STATUS: ERROR');
       console.error('Error: sclang binary not found');
       process.exit(1);
     }
+    const serverStatus = await probeServerWithNewController(sclangPath);
+    console.log('STATUS: OK');
+    console.log(`PATH: ${sclangPath}`);
+    console.log(`SERVER: ${serverStatus}`);
   });
 
 program

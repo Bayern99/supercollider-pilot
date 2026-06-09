@@ -121,10 +121,12 @@ Design spec: [docs/design/scctl-scope-enhancement.md](docs/design/scctl-scope-en
 
 ```bash
 npm run build
-node dist/cli.js check
+node dist/cli.js check    # expect STATUS, PATH, and SERVER lines
 node dist/cli.js render fixtures/smoke/sine-play.scd -o /tmp/scctl-smoke.wav -d 2
 test -s /tmp/scctl-smoke.wav
 ```
+
+If smoke fails locally, see [docs/smoke-troubleshooting.md](docs/smoke-troubleshooting.md).
 
 ### Examples
 

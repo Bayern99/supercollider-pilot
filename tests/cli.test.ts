@@ -21,6 +21,9 @@ describe('CLI Shell Interface', () => {
       stdout = err.stdout ? err.stdout.toString() : '';
     }
     expect(stdout).toMatch(/STATUS: (OK|ERROR)/);
+    if (stdout.includes('STATUS: OK')) {
+      expect(stdout).toMatch(/SERVER: (running|not_running|unknown)/);
+    }
   });
 
   it('should support render command in help', () => {
@@ -32,6 +35,11 @@ describe('CLI Shell Interface', () => {
     const stdout = execSync('node ./dist/cli.js render --help').toString();
     expect(stdout).toContain('-o');
     expect(stdout).toContain('--duration');
+  });
+
+  it('should expose run options', () => {
+    const stdout = execSync('node ./dist/cli.js run --help').toString();
+    expect(stdout).toContain('--tail-logs');
   });
 
   it('should fail render when sclang is missing', () => {
@@ -54,32 +62,6 @@ describe('CLI Shell Interface', () => {
       }).toThrow();
     } finally {
       if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-    }
-  });
-
-  it('should support run command', () => {
-    const tempFile = path.resolve('temp_test_cli.scd');
-    fs.writeFileSync(tempFile, '1 + 1');
-    try {
-      let checkStdout = '';
-      try {
-        checkStdout = execSync('node ./dist/cli.js check').toString();
-      } catch (err: any) {
-        checkStdout = err.stdout ? err.stdout.toString() : '';
-      }
-
-      if (checkStdout.includes('STATUS: OK')) {
-        const stdout = execSync(`node ./dist/cli.js run "${tempFile}"`).toString();
-        expect(stdout).toBeDefined();
-      } else {
-        expect(() => {
-          execSync(`node ./dist/cli.js run "${tempFile}"`);
-        }).toThrow();
-      }
-    } finally {
-      if (fs.existsSync(tempFile)) {
-        fs.unlinkSync(tempFile);
-      }
     }
   });
 });

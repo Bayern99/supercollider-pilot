@@ -7,6 +7,10 @@ import {
 import { discoverSclangPath } from '../runtime/discover.js';
 import { readScdFile } from '../runtime/sc-file.js';
 import { renderSession } from '../runtime/render.js';
+import {
+  formatCheckText,
+  probeServerWithNewController,
+} from '../runtime/server-probe.js';
 import { SclangController } from '../runtime/sclang.js';
 
 const AGENT_SC_RULE =
@@ -72,7 +76,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'sc_check',
-        description: 'Check if SuperCollider sclang path is available',
+        description:
+          'Check sclang availability and probe whether the scsynth server is running (short eval, no persistent session).',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -124,7 +129,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'sc_render',
         description:
-          'Record user SuperCollider code to a WAV file (R1 wrapper: boot, record, wait, stop). Do not call s.record in user code.' +
+          'Record user SuperCollider code to a WAV file (R1 wrapper: boot, record, wait, stop). Do not call s.record or s.stopRecording in user code. Use the duration parameter for length; do not rely on Pdef/Routine timing. For audition without WAV, use sc_eval instead.' +
           AGENT_SC_RULE,
         inputSchema: {
           type: 'object',
@@ -166,24 +171,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === 'sc_check') {
     const path = discoverSclangPath();
-    if (path) {
+    if (!path) {
       return {
         content: [
           {
             type: 'text',
-            text: `sclang found at: ${path}`,
+            text: 'sclang binary not found in standard paths or system PATH',
           },
         ],
+        isError: true,
       };
     }
+    const serverStatus = await probeServerWithNewController(path);
     return {
       content: [
         {
           type: 'text',
-          text: 'sclang binary not found in standard paths or system PATH',
+          text: formatCheckText(path, serverStatus),
         },
       ],
-      isError: true,
     };
   }
 
