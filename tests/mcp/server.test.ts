@@ -1,12 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
-const { mockDiscoverSclangPath, MockSclangController } = vi.hoisted(() => {
+const {
+  mockDiscoverSclangPath,
+  mockReadScdFile,
+  mockRenderSession,
+  MockSclangController,
+} = vi.hoisted(() => {
   const mockDiscoverSclangPath = vi.fn();
+  const mockReadScdFile = vi.fn();
+  const mockRenderSession = vi.fn();
   class MockSclangController {
     static instances: MockSclangController[] = [];
     path: string;
-    
+    logContent = 'line1\nline2\n';
+
     constructor(path: string) {
       this.path = path;
       MockSclangController.instances.push(this);
@@ -17,12 +25,23 @@ const { mockDiscoverSclangPath, MockSclangController } = vi.hoisted(() => {
       return { success: true, output: 'mocked output' };
     }
     async stop(): Promise<void> {}
+    getLogs(): string {
+      return this.logContent;
+    }
   }
-  return { mockDiscoverSclangPath, MockSclangController };
+  return { mockDiscoverSclangPath, mockReadScdFile, mockRenderSession, MockSclangController };
 });
 
 vi.mock('../../src/runtime/discover.js', () => ({
   discoverSclangPath: mockDiscoverSclangPath,
+}));
+
+vi.mock('../../src/runtime/sc-file.js', () => ({
+  readScdFile: mockReadScdFile,
+}));
+
+vi.mock('../../src/runtime/render.js', () => ({
+  renderSession: mockRenderSession,
 }));
 
 vi.mock('../../src/runtime/sclang.js', () => ({
@@ -36,6 +55,8 @@ describe('MCP Server Integration', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockDiscoverSclangPath.mockReset();
+    mockReadScdFile.mockReset();
+    mockRenderSession.mockReset();
     MockSclangController.instances = [];
     setActiveController(null);
     
@@ -56,7 +77,7 @@ describe('MCP Server Integration', () => {
 
     const result = await listToolsHandler({ method: 'tools/list' }, { signal: new AbortController().signal });
     expect(result).toBeDefined();
-    expect(result.tools).toHaveLength(3);
+    expect(result.tools).toHaveLength(6);
 
     const checkTool = result.tools.find((t: any) => t.name === 'sc_check');
     expect(checkTool).toBeDefined();
@@ -66,6 +87,18 @@ describe('MCP Server Integration', () => {
     expect(evalTool).toBeDefined();
     expect(evalTool.inputSchema.properties.code).toBeDefined();
     expect(evalTool.inputSchema.required).toContain('code');
+    expect(evalTool.description).toContain('formation');
+
+    const runFileTool = result.tools.find((t: any) => t.name === 'sc_run_file');
+    expect(runFileTool).toBeDefined();
+    expect(runFileTool.inputSchema.required).toContain('path');
+
+    const logsTool = result.tools.find((t: any) => t.name === 'sc_logs');
+    expect(logsTool).toBeDefined();
+
+    const renderTool = result.tools.find((t: any) => t.name === 'sc_render');
+    expect(renderTool).toBeDefined();
+    expect(renderTool.inputSchema.required).toContain('out');
 
     const stopTool = result.tools.find((t: any) => t.name === 'sc_stop');
     expect(stopTool).toBeDefined();
@@ -204,6 +237,117 @@ describe('MCP Server Integration', () => {
       expect(getActiveController()).toBeNull();
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Execution failed: Spawn failed');
+    });
+  });
+
+  describe('sc_logs tool', () => {
+    it('returns controller buffer', async () => {
+      mockDiscoverSclangPath.mockReturnValue('/mock/sclang');
+      const ctrl = new MockSclangController('/mock/sclang');
+      ctrl.logContent = 'ERROR: bad ugen';
+      setActiveController(ctrl as any);
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_logs', arguments: {} },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result.content[0].text).toContain('ERROR: bad ugen');
+    });
+
+    it('returns error when no active session', async () => {
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_logs', arguments: {} },
+        },
+        { signal: new AbortController().signal },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No active sclang session');
+    });
+  });
+
+  describe('sc_run_file tool', () => {
+    it('reads file and executes without stopping session', async () => {
+      mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
+      mockReadScdFile.mockReturnValue('{ SinOsc.ar(440) }.play;');
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_run_file', arguments: { path: '/abs/test.scd' } },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(mockReadScdFile).toHaveBeenCalledWith('/abs/test.scd');
+      const controller = getActiveController() as any;
+      expect(controller.execute).toHaveBeenCalledWith('{ SinOsc.ar(440) }.play;');
+      expect(controller.stop).not.toHaveBeenCalled();
+      expect(result.isError).toBe(false);
+    });
+
+    it('returns error when path is missing', async () => {
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_run_file', arguments: {} },
+        },
+        { signal: new AbortController().signal },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Missing required argument');
+    });
+  });
+
+  describe('sc_render tool', () => {
+    it('renders from path and clears active controller', async () => {
+      mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
+      mockReadScdFile.mockReturnValue('{ SinOsc.ar(440) }.play;');
+      mockRenderSession.mockResolvedValue({
+        success: true,
+        output: 'rendered',
+        outPath: '/tmp/out.wav',
+        bytes: 12345,
+      });
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'sc_render',
+            arguments: { path: '/abs/test.scd', out: '/tmp/out.wav', duration: 2 },
+          },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(mockRenderSession).toHaveBeenCalled();
+      expect(getActiveController()).toBeNull();
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('WAV: /tmp/out.wav (12345 bytes)');
+    });
+
+    it('returns error when neither path nor code provided', async () => {
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+      const result = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_render', arguments: { out: '/tmp/out.wav' } },
+        },
+        { signal: new AbortController().signal },
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('exactly one');
     });
   });
 

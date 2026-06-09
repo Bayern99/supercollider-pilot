@@ -9,15 +9,16 @@ const DEFAULT_EXECUTE_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_LOG_BYTES = 512_000;
 
 function wrapScCode(code: string, delim: string): string {
+  const body = code.trimEnd().replace(/;\s*$/, '');
   return (
-    'try {\n' +
-    '  {\n' +
-    code + '\n' +
-    '  }.value;\n' +
-    '  "\\n' + delim + '_OK".postln;\n' +
-    '} { |error|\n' +
-    '  "\\n' + delim + '_ERR".postln;\n' +
-    '  error.reportError;\n' +
+    'fork {\n' +
+    '  try {\n' +
+    body + ';\n' +
+    '    "\\n' + delim + '_OK".postln;\n' +
+    '  } { |error|\n' +
+    '    "\\n' + delim + '_ERR".postln;\n' +
+    '    error.reportError;\n' +
+    '  };\n' +
     '};\n'
   );
 }

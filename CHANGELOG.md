@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP `sc_logs` — tail sclang post buffer from active session
+- MCP `sc_run_file` — evaluate `.scd` file in persistent session
+- MCP `sc_render` — R1 wrapper record to WAV (`path` or `code`, `out`, `duration`)
+- CLI `scctl render <file> -o <wav>` and `scctl run --tail-logs <n>`
+- `readScdFile` helper (`src/runtime/sc-file.ts`) and `renderSession` (`src/runtime/render.ts`)
+- Smoke fixture `fixtures/smoke/sine-play.scd`
 - GitHub Actions CI, Dependabot, LICENSE, SECURITY.md, CONTRIBUTING.md
 - `SclangControllerOptions`: execute timeout (default 120s), log buffer cap
 - Example scripts: `play-music.js`, `record-music.js`
@@ -22,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `wrapScCode()` runs user code in a `fork` so `s.sync` and `.wait` work in eval/render paths
 - Execute hangs when delimiter appears on stderr
 - Concurrent `boot()` could spawn multiple sclang processes
 - `record-music.js` hardcoded absolute path replaced with `process.cwd()`

@@ -12,8 +12,9 @@ This project wraps the [SuperCollider](https://supercollider.github.io/) `sclang
 
 - Cross-platform `sclang` discovery (macOS, Windows, Linux, plus `PATH` fallback)
 - Persistent `SclangController` with delimiter-based stdout/stderr parsing
-- MCP tools: `sc_check`, `sc_eval`, `sc_stop`
-- CLI: `scctl check`, `scctl run <file.scd>`
+- MCP tools: `sc_check`, `sc_eval`, `sc_run_file`, `sc_logs`, `sc_render`, `sc_stop`
+- CLI: `scctl check`, `scctl run <file.scd>`, `scctl render <file.scd> -o out.wav`
+- R1 render wrapper: boot → user code → record → wait → stop → verify WAV
 - Graceful shutdown with SIGINT/SIGTERM handling and execute timeout (default 120s)
 - Vitest coverage for discovery, runtime, CLI, and MCP routing
 
@@ -62,8 +63,14 @@ PATH: /Applications/SuperCollider.app/Contents/MacOS/sclang
 # Check installation
 node dist/cli.js check
 
-# Run a .scd file
+# Run a .scd file (one-shot; exits after eval)
 node dist/cli.js run path/to/script.scd
+
+# On failure, print last N log characters
+node dist/cli.js run path/to/script.scd --tail-logs 500
+
+# Record a .scd file to WAV (R1 wrapper)
+node dist/cli.js render path/to/script.scd -o /tmp/out.wav -d 5
 
 # Optional global install
 npm link
@@ -94,8 +101,30 @@ node dist/mcp/server.js
 | Tool | Parameters | Description |
 |------|------------|-------------|
 | `sc_check` | — | Return whether `sclang` is available and its path |
-| `sc_eval` | `code` (string, required) | Evaluate SuperCollider code in a persistent session |
+| `sc_eval` | `code` (required) | Evaluate code in a persistent session (stays open) |
+| `sc_run_file` | `path` (required) | Read and evaluate a `.scd` file (session stays open) |
+| `sc_logs` | `tail` (optional) | Recent sclang post output from the active session |
+| `sc_render` | `out` (required), `path` or `code`, `duration` | Record to WAV; always stops session after |
 | `sc_stop` | — | Stop synthesis, release audio, shut down `sclang` |
+
+### Agent workflow
+
+Typical design-phase loop: `sc_check` → `sc_eval` or `sc_run_file` → `sc_logs` (on error) → `sc_render` → `sc_stop`.
+
+- Use **absolute paths** for `.scd` files and WAV output (no default cwd).
+- Do not put formation/oracle/casting logic in SuperCollider code — only SynthDefs and playback.
+- Persistent log tailing is **MCP-only** (`sc_logs`). The CLI is one-shot; use `run --tail-logs N` on failure.
+
+Design spec: [docs/design/scctl-scope-enhancement.md](docs/design/scctl-scope-enhancement.md)
+
+### Smoke test (requires local SuperCollider)
+
+```bash
+npm run build
+node dist/cli.js check
+node dist/cli.js render fixtures/smoke/sine-play.scd -o /tmp/scctl-smoke.wav -d 2
+test -s /tmp/scctl-smoke.wav
+```
 
 ### Examples
 
