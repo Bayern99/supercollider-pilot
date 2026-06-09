@@ -1,0 +1,19 @@
+{
+  "name": "super-coding-agent",
+  "version": "1.0.0",
+  "description": "SuperCollider Coding Agent",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.8"
+  }
+}
