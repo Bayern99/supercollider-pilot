@@ -21,5 +21,18 @@ export function discoverSclangPath(platform: string = process.platform): string 
       }
     }
   }
+
+  // Fallback: check directories in system PATH
+  const envPath = process.env.PATH || '';
+  const pathDelimiter = platform === 'win32' ? ';' : ':';
+  const exeName = platform === 'win32' ? 'sclang.exe' : 'sclang';
+  for (const dir of envPath.split(pathDelimiter)) {
+    if (!dir) continue;
+    const fullPath = platform === 'win32' ? path.win32.join(dir, exeName) : path.posix.join(dir, exeName);
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
   return null;
 }
