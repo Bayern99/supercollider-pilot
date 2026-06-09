@@ -8,25 +8,7 @@
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](package.json)
 
-本项目将 [SuperCollider](https://supercollider.github.io/) 的 `sclang` 解释器封装为 [MCP](https://modelcontextprotocol.io) 服务，供 Claude Desktop、Cursor 等客户端检查安装、执行代码、读取日志、录制 WAV，并干净地关闭音频。
-
-## 为什么做 scctl？
-
-现有 SuperCollider MCP 方案大致两类：一类是**自带音乐框架**（内置音色、效果、作曲 skill），Agent 容易被绑在作者的抽象里；另一类是**工具堆得很满**（Quark、Buffer、Group…），Agent 容易乱调。
-
-scctl 的定位是 **原生 SuperCollider 的薄驱动层**：
-
-| 痛点 | scctl 的做法 |
-|------|----------------|
-| Agent 执行 SC 报错却看不到 post | MCP `sc_logs`，CLI `run --tail-logs` |
-| 只能贴代码字符串，不好跑项目里的 `.scd` | `sc_run_file` / `scctl run` |
-| 录音要自己拼 `s.boot` + `s.record` | `sc_render` / `scctl render`（R1 包装） |
-| 工具太多，会话语义不清 | **固定 6 个 MCP 工具**，eval 保持会话，render 后必停 |
-| 只想驱动 sclang，不要换一套 JS 栈 | 直接 spawn `sclang`，跨 macOS / Windows / Linux |
-
-**初衷：** 让 Agent 像开发者一样操作 SuperCollider——检查环境、迭代 `.scd`、读日志、导出 WAV、干净退出——**音乐逻辑留在你的 SuperCollider 代码里**，而不是写进 MCP 服务器。
-
-若你想要「描述氛围立刻开玩」，可试 [claude-collider](https://github.com/jeremyruppel/claude-collider)。若你要把 **SuperCollider 嵌进自己的 Agent / 工具链**，用 scctl。
+将 [SuperCollider](https://supercollider.github.io/) 的 `sclang` 封装为 [MCP](https://modelcontextprotocol.io) 服务（六个工具）及对应的 CLI：检查安装、执行 `.scd`、读取 post、录制 WAV、干净退出。
 
 ## 功能
 

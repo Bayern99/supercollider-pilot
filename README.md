@@ -8,18 +8,7 @@
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](package.json)
 
-This project wraps the [SuperCollider](https://supercollider.github.io/) `sclang` interpreter as an [MCP](https://modelcontextprotocol.io) server so Claude Desktop, Cursor, and other clients can check installation, evaluate code, and shut down audio cleanly.
-
-## Why scctl?
-
-Most SuperCollider MCP servers ship a **music framework** (built-in synths, effects, songwriting skills) or expose **dozens of tools** that agents misuse. scctl is intentionally different:
-
-- **Thin driver** — native `sclang`, not a replacement language stack. Your sound logic stays in `.scd` files.
-- **Six tools, fixed workflow** — `check` → `eval` / `run_file` → `logs` → `render` → `stop`.
-- **Agent-debuggable** — `sc_logs` for post-window output; `sc_render` for WAV artifacts without hand-rolling `s.record`.
-- **CLI + MCP** — same runtime for humans (smoke, CI) and agents (Cursor, Claude Desktop).
-
-If you want an AI jam session out of the box, try [claude-collider](https://github.com/jeremyruppel/claude-collider). If you want a **reliable bridge into your own SuperCollider project**, use scctl.
+Wraps the [SuperCollider](https://supercollider.github.io/) `sclang` interpreter as an [MCP](https://modelcontextprotocol.io) server (six tools) and a matching CLI. Check install, evaluate `.scd` files, tail post output, record WAV, stop cleanly.
 
 ## Features
 
