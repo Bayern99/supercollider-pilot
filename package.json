@@ -2,19 +2,44 @@
   "name": "scctl",
   "version": "1.0.0",
   "type": "module",
-  "description": "SuperCollider Coding Agent",
-  "main": "dist/index.js",
+  "description": "Bridge SuperCollider sclang to AI agents via MCP and CLI",
   "bin": {
     "scctl": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc"
+    "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "supercollider",
+    "sclang",
+    "mcp",
+    "model-context-protocol",
+    "audio",
+    "synthesis",
+    "ai-agent"
+  ],
+  "author": "Jerry Duan",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bayern99/New.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Bayern99/New/issues"
+  },
+  "homepage": "https://github.com/Bayern99/New#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",
     "commander": "^11.1.0"

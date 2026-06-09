@@ -1,45 +1,72 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 
+export interface SclangControllerOptions {
+  executeTimeoutMs?: number;
+  maxLogBytes?: number;
+}
+
+const DEFAULT_EXECUTE_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_LOG_BYTES = 512_000;
+
+function wrapScCode(code: string, delim: string): string {
+  return (
+    'try {\n' +
+    '  {\n' +
+    code + '\n' +
+    '  }.value;\n' +
+    '  "\\n' + delim + '_OK".postln;\n' +
+    '} { |error|\n' +
+    '  "\\n' + delim + '_ERR".postln;\n' +
+    '  error.reportError;\n' +
+    '};\n'
+  );
+}
+
 export class SclangController {
   private process: ChildProcessWithoutNullStreams | null = null;
   private path: string;
   private outputBuffer: string = '';
   private isExecuting: boolean = false;
+  private executeTimeoutMs: number;
+  private maxLogBytes: number;
 
-  // Track active boot resolve/reject and timeout
+  private bootPromise: Promise<void> | null = null;
   private bootResolve: (() => void) | null = null;
   private bootReject: ((err: Error) => void) | null = null;
   private bootTimeout: NodeJS.Timeout | null = null;
 
-  // Track active execute reject
   private activeExecuteReject: ((err: Error) => void) | null = null;
 
-  constructor(sclangPath: string) {
+  constructor(sclangPath: string, options: SclangControllerOptions = {}) {
     this.path = sclangPath;
+    this.executeTimeoutMs = options.executeTimeoutMs ?? DEFAULT_EXECUTE_TIMEOUT_MS;
+    this.maxLogBytes = options.maxLogBytes ?? DEFAULT_MAX_LOG_BYTES;
   }
 
   public boot(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.process) {
-        resolve();
-        return;
-      }
+    if (this.bootPromise) {
+      return this.bootPromise;
+    }
+    if (this.process) {
+      return Promise.resolve();
+    }
+
+    this.bootPromise = new Promise((resolve, reject) => {
       try {
         this.bootResolve = resolve;
         this.bootReject = reject;
 
-        // -i scide launches sclang in interactive mode
         const cp = spawn(this.path, ['-i', 'scide']);
         this.process = cp;
-        
-        cp.stdin.on('error', () => {}); // swallow EPIPE/write errors
+
+        cp.stdin.on('error', () => {});
 
         cp.stdout.on('data', (data) => {
-          this.outputBuffer += data.toString();
+          this.appendLog(data.toString());
         });
 
         cp.stderr.on('data', (data) => {
-          this.outputBuffer += data.toString();
+          this.appendLog(data.toString());
         });
 
         cp.on('error', (err) => {
@@ -52,12 +79,13 @@ export class SclangController {
             clearTimeout(this.bootTimeout);
             this.bootTimeout = null;
           }
+          this.bootPromise = null;
           this.cleanupProcess();
         });
 
         cp.on('exit', (code, signal) => {
           const exitErr = new Error(`sclang process exited unexpectedly with code ${code} and signal ${signal}`);
-          
+
           if (this.bootReject) {
             this.bootReject(exitErr);
             this.bootReject = null;
@@ -73,10 +101,10 @@ export class SclangController {
             this.activeExecuteReject = null;
           }
 
+          this.bootPromise = null;
           this.cleanupProcess();
         });
 
-        // Wait brief moment for interpreter to boot
         this.bootTimeout = setTimeout(() => {
           this.bootTimeout = null;
           if (this.bootResolve) {
@@ -84,13 +112,17 @@ export class SclangController {
             this.bootResolve = null;
             this.bootReject = null;
           }
+          this.bootPromise = null;
         }, 1500);
       } catch (err: any) {
+        this.bootPromise = null;
         reject(err);
         this.bootResolve = null;
         this.bootReject = null;
       }
     });
+
+    return this.bootPromise;
   }
 
   public async execute(code: string): Promise<{ success: boolean; output: string }> {
@@ -105,17 +137,7 @@ export class SclangController {
     this.isExecuting = true;
 
     const delim = 'SC_EVAL_DONE_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-    const wrappedCode = `
-try {
-  {
-    ${code}
-  }.value;
-  "\\n${delim}_OK".postln;
-} { |error|
-  "\\n${delim}_ERR".postln;
-  error.reportError;
-};
-`;
+    const wrappedCode = wrapScCode(code, delim);
 
     return new Promise<{ success: boolean; output: string }>((resolve, reject) => {
       this.activeExecuteReject = reject;
@@ -124,10 +146,10 @@ try {
       const dataHandler = (data: Buffer) => {
         const chunk = data.toString();
         runBuffer += chunk;
-        this.outputBuffer += chunk;
+        this.appendLog(chunk);
 
         if (runBuffer.includes(`${delim}_OK`)) {
-          cleanup();
+          finish();
           this.isExecuting = false;
           this.activeExecuteReject = null;
           resolve({
@@ -135,7 +157,7 @@ try {
             output: runBuffer.replace(`${delim}_OK`, '').trim(),
           });
         } else if (runBuffer.includes(`${delim}_ERR`)) {
-          cleanup();
+          finish();
           this.isExecuting = false;
           this.activeExecuteReject = null;
           resolve({
@@ -145,15 +167,26 @@ try {
         }
       };
 
-      const cleanup = () => {
+      const finish = () => {
         this.process?.stdout.removeListener('data', dataHandler);
+        this.process?.stderr.removeListener('data', dataHandler);
+        clearTimeout(executeTimeout);
       };
 
+      const executeTimeout = setTimeout(() => {
+        finish();
+        this.isExecuting = false;
+        this.activeExecuteReject = null;
+        reject(new Error(`Execution timed out after ${this.executeTimeoutMs}ms`));
+      }, this.executeTimeoutMs);
+
       this.process!.stdout.on('data', dataHandler);
+      this.process!.stderr.on('data', dataHandler);
+
       try {
-        this.process!.stdin.write(wrappedCode + '\x0c'); // Form feed character evaluates in sclang
+        this.process!.stdin.write(wrappedCode + '\x0c');
       } catch (err: any) {
-        cleanup();
+        finish();
         this.isExecuting = false;
         this.activeExecuteReject = null;
         reject(err);
@@ -167,49 +200,62 @@ try {
 
   public stop(): Promise<void> {
     return new Promise<void>((resolve) => {
-      if (!this.process) {
+      const cp = this.process;
+      if (!cp) {
         resolve();
         return;
       }
-      
-      const processToKill = this.process;
-      this.cleanupProcess();
-      
+
+      if (this.activeExecuteReject) {
+        const rejectExecute = this.activeExecuteReject;
+        this.activeExecuteReject = null;
+        this.isExecuting = false;
+        rejectExecute(new Error('Controller stopped'));
+      }
+
       const onExit = () => {
         cleanup();
+        this.cleanupProcess();
         resolve();
       };
-      
+
       const cleanup = () => {
-        processToKill.removeListener('exit', onExit);
-        processToKill.removeListener('close', onExit);
+        cp.removeListener('exit', onExit);
+        cp.removeListener('close', onExit);
         clearTimeout(killTimeout);
       };
 
-      processToKill.on('exit', onExit);
-      processToKill.on('close', onExit);
+      cp.on('exit', onExit);
+      cp.on('close', onExit);
 
       const killTimeout = setTimeout(() => {
         try {
-          processToKill.kill('SIGKILL');
-        } catch (err) {
+          cp.kill('SIGKILL');
+        } catch {
           // Ignore
         }
         onExit();
       }, 500);
 
       try {
-        processToKill.stdin.write('CmdPeriod.run; Server.killAll;\n\x0c');
-        processToKill.stdin.end();
-      } catch (err) {
+        cp.stdin.write('CmdPeriod.run; Server.killAll;\n\x0c');
+        cp.stdin.end();
+      } catch {
         try {
-          processToKill.kill('SIGKILL');
-        } catch (e) {
+          cp.kill('SIGKILL');
+        } catch {
           // Ignore
         }
         onExit();
       }
     });
+  }
+
+  private appendLog(chunk: string): void {
+    this.outputBuffer += chunk;
+    if (this.outputBuffer.length > this.maxLogBytes) {
+      this.outputBuffer = this.outputBuffer.slice(-this.maxLogBytes);
+    }
   }
 
   private cleanupProcess(): void {

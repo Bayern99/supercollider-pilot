@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { spawn } from 'child_process';
 import { SclangController } from '../../src/runtime/sclang.js';
 import { EventEmitter } from 'events';
 
@@ -26,8 +27,8 @@ vi.mock('child_process', () => {
 
 describe('Sclang Process Controller', () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
     mockProcess = new MockProcess();
+    vi.mocked(spawn).mockClear();
   });
 
   it('should instantiate and execute a simple code block', async () => {
@@ -42,15 +43,12 @@ describe('Sclang Process Controller', () => {
     vi.useFakeTimers();
     const bootPromise = controller.boot();
     
-    // Fast-forward timeout in boot
     await vi.advanceTimersByTimeAsync(1500);
     await bootPromise;
 
     const execPromise = controller.execute('1 + 1');
 
-    // Simulate stdout output from sclang
     setTimeout(() => {
-      // Find delimiter in mockStdin.write call to match it
       const lastWrite = mockProcess.stdin.write.mock.calls[0][0] as string;
       const delimMatch = lastWrite.match(/SC_EVAL_DONE_\d+_\d+/);
       const delim = delimMatch ? delimMatch[0] : '';
@@ -72,13 +70,11 @@ describe('Sclang Process Controller', () => {
     vi.useFakeTimers();
     const bootPromise = controller.boot();
     
-    // Fast-forward timeout in boot
     await vi.advanceTimersByTimeAsync(1500);
     await bootPromise;
 
     const execPromise = controller.execute('invalid_code');
 
-    // Simulate stdout output from sclang indicating error
     setTimeout(() => {
       const lastWrite = mockProcess.stdin.write.mock.calls[0][0] as string;
       const delimMatch = lastWrite.match(/SC_EVAL_DONE_\d+_\d+/);
@@ -116,13 +112,14 @@ describe('Sclang Process Controller', () => {
 
   it('should reject boot on spawn error', async () => {
     const controller = new SclangController('/mock/path/sclang');
-    
+
     const bootPromise = controller.boot();
-    
+    const rejection = expect(bootPromise).rejects.toThrow('Spawn failed');
+
     const testError = new Error('Spawn failed');
     mockProcess.emit('error', testError);
-    
-    await expect(bootPromise).rejects.toThrow('Spawn failed');
+
+    await rejection;
   });
 
   it('should reject execute on process exit', async () => {
@@ -135,7 +132,6 @@ describe('Sclang Process Controller', () => {
 
     const execPromise = controller.execute('1 + 1');
 
-    // Simulate process crash/exit
     mockProcess.emit('exit', 1, 'SIGKILL');
 
     await expect(execPromise).rejects.toThrow('sclang process exited unexpectedly with code 1 and signal SIGKILL');
@@ -155,13 +151,122 @@ describe('Sclang Process Controller', () => {
 
     await expect(execPromise2).rejects.toThrow('Concurrent execution is not supported');
 
-    // Clean up first execution to avoid hanging promises
     const lastWrite = mockProcess.stdin.write.mock.calls[0][0] as string;
     const delimMatch = lastWrite.match(/SC_EVAL_DONE_\d+_\d+/);
     const delim = delimMatch ? delimMatch[0] : '';
     mockProcess.stdout.emit('data', Buffer.from(`${delim}_OK`));
 
     await execPromise1;
+    vi.useRealTimers();
+  });
+
+  it('should pass user code literally without JS template interpolation', async () => {
+    const controller = new SclangController('/mock/path/sclang');
+
+    vi.useFakeTimers();
+    const bootPromise = controller.boot();
+    await vi.advanceTimersByTimeAsync(1500);
+    await bootPromise;
+
+    const literal = '"${Date.now()}"';
+    const execPromise = controller.execute(literal);
+
+    setTimeout(() => {
+      const written = mockProcess.stdin.write.mock.calls[0][0] as string;
+      expect(written).toContain('${Date.now()}');
+      const delimMatch = written.match(/SC_EVAL_DONE_\d+_\d+/);
+      const delim = delimMatch ? delimMatch[0] : '';
+      mockProcess.stdout.emit('data', Buffer.from(`${delim}_OK\n`));
+    }, 100);
+
+    await vi.advanceTimersByTimeAsync(200);
+    await execPromise;
+    vi.useRealTimers();
+  });
+
+  it('should reject execute when timeout expires', async () => {
+    const controller = new SclangController('/mock/path/sclang', { executeTimeoutMs: 1000 });
+
+    vi.useFakeTimers();
+    const bootPromise = controller.boot();
+    await vi.advanceTimersByTimeAsync(1500);
+    await bootPromise;
+
+    const execPromise = controller.execute('slow_code');
+    const rejection = expect(execPromise).rejects.toThrow('Execution timed out after 1000ms');
+    await vi.advanceTimersByTimeAsync(1001);
+    await rejection;
+    vi.useRealTimers();
+  });
+
+  it('should detect delimiter on stderr', async () => {
+    const controller = new SclangController('/mock/path/sclang');
+
+    vi.useFakeTimers();
+    const bootPromise = controller.boot();
+    await vi.advanceTimersByTimeAsync(1500);
+    await bootPromise;
+
+    const execPromise = controller.execute('1 + 1');
+
+    setTimeout(() => {
+      const lastWrite = mockProcess.stdin.write.mock.calls[0][0] as string;
+      const delimMatch = lastWrite.match(/SC_EVAL_DONE_\d+_\d+/);
+      const delim = delimMatch ? delimMatch[0] : '';
+      mockProcess.stderr.emit('data', Buffer.from(`\n2\n${delim}_OK\n`));
+    }, 100);
+
+    await vi.advanceTimersByTimeAsync(200);
+    const result = await execPromise;
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('2');
+    vi.useRealTimers();
+  });
+
+  it('should reject execute when stop is called during execution', async () => {
+    const controller = new SclangController('/mock/path/sclang');
+
+    vi.useFakeTimers();
+    const bootPromise = controller.boot();
+    await vi.advanceTimersByTimeAsync(1500);
+    await bootPromise;
+
+    const execPromise = controller.execute('1 + 1');
+    const stopPromise = controller.stop();
+
+    await expect(execPromise).rejects.toThrow('Controller stopped');
+    await vi.advanceTimersByTimeAsync(500);
+    await stopPromise;
+    vi.useRealTimers();
+  });
+
+  it('should deduplicate concurrent boot calls', async () => {
+    const controller = new SclangController('/mock/path/sclang');
+
+    vi.useFakeTimers();
+    const boot1 = controller.boot();
+    const boot2 = controller.boot();
+
+    expect(boot1).toBe(boot2);
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1500);
+    await boot1;
+    await boot2;
+    vi.useRealTimers();
+  });
+
+  it('should cap output buffer size', async () => {
+    const controller = new SclangController('/mock/path/sclang', { maxLogBytes: 100 });
+
+    vi.useFakeTimers();
+    const bootPromise = controller.boot();
+    await vi.advanceTimersByTimeAsync(1500);
+    await bootPromise;
+
+    mockProcess.stdout.emit('data', Buffer.from('x'.repeat(150)));
+    expect(controller.getLogs().length).toBeLessThanOrEqual(100);
     vi.useRealTimers();
   });
 });

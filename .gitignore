@@ -1,3 +1,19 @@
 node_modules/
 dist/
 .DS_Store
+
+# Generated audio artifacts
+*.wav
+
+# Test / temp files
+temp_test_cli.scd
+*.log
+coverage/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/

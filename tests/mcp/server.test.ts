@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 const { mockDiscoverSclangPath, MockSclangController } = vi.hoisted(() => {
