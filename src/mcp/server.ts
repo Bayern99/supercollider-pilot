@@ -17,6 +17,21 @@ export function setActiveController(controller: SclangController | null): void {
   activeController = controller;
 }
 
+const handleSignal = async () => {
+  if (activeController) {
+    try {
+      await activeController.stop();
+    } catch {
+      // Ignore stop errors during shutdown
+    }
+    activeController = null;
+  }
+  process.exit(0);
+};
+
+process.on('SIGINT', handleSignal);
+process.on('SIGTERM', handleSignal);
+
 export const server = new Server(
   {
     name: 'scctl-mcp-server',
@@ -96,13 +111,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   if (name === 'sc_eval') {
-    const code = args?.code as string;
-    if (!code) {
+    const code = args?.code;
+    if (code === undefined || code === null || code === '') {
       return {
         content: [
           {
             type: 'text',
             text: 'Missing required argument: code',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (typeof code !== 'string') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Argument "code" must be a string.',
           },
         ],
         isError: true,

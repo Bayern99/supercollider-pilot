@@ -112,6 +112,18 @@ describe('MCP Server Integration', () => {
       expect(result.content[0].text).toContain('Missing required argument');
     });
 
+    it('should return error if code is not a string', async () => {
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+      
+      const result = await callToolHandler({
+        method: 'tools/call',
+        params: { name: 'sc_eval', arguments: { code: 123 } }
+      }, { signal: new AbortController().signal });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('must be a string');
+    });
+
     it('should lazily boot controller on first eval and execute code', async () => {
       mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
       const callToolHandler = (server as any)._requestHandlers.get('tools/call');
@@ -233,5 +245,65 @@ describe('MCP Server Integration', () => {
 
   it('should expose startMcpServer function', () => {
     expect(typeof startMcpServer).toBe('function');
+  });
+
+  describe('Signal Handling', () => {
+    let mockExit: any;
+
+    beforeEach(() => {
+      mockExit = vi.spyOn(process, 'exit').mockImplementation((() => {}) as any);
+    });
+
+    afterEach(() => {
+      mockExit.mockRestore();
+    });
+
+    it('should handle SIGINT by stopping active controller and exiting', async () => {
+      mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+
+      // Start one first
+      await callToolHandler({
+        method: 'tools/call',
+        params: { name: 'sc_eval', arguments: { code: '1 + 1' } }
+      }, { signal: new AbortController().signal });
+
+      const controller = getActiveController() as any;
+      expect(controller).not.toBeNull();
+
+      // Trigger SIGINT
+      await new Promise<void>((resolve) => {
+        process.emit('SIGINT', 'SIGINT');
+        setTimeout(resolve, 50);
+      });
+
+      expect(controller.stop).toHaveBeenCalled();
+      expect(getActiveController()).toBeNull();
+      expect(mockExit).toHaveBeenCalledWith(0);
+    });
+
+    it('should handle SIGTERM by stopping active controller and exiting', async () => {
+      mockDiscoverSclangPath.mockReturnValue('/mock/path/sclang');
+      const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+
+      // Start one first
+      await callToolHandler({
+        method: 'tools/call',
+        params: { name: 'sc_eval', arguments: { code: '1 + 1' } }
+      }, { signal: new AbortController().signal });
+
+      const controller = getActiveController() as any;
+      expect(controller).not.toBeNull();
+
+      // Trigger SIGTERM
+      await new Promise<void>((resolve) => {
+        process.emit('SIGTERM', 'SIGTERM');
+        setTimeout(resolve, 50);
+      });
+
+      expect(controller.stop).toHaveBeenCalled();
+      expect(getActiveController()).toBeNull();
+      expect(mockExit).toHaveBeenCalledWith(0);
+    });
   });
 });
