@@ -10,6 +10,9 @@ temp_test_cli.scd
 *.log
 coverage/
 
+# Local archive / runtime state
+.scctl/
+
 # Environment
 .env
 .env.*
@@ -17,3 +20,4 @@ coverage/
 # IDE
 .vscode/
 .idea/
+.cursor/plans/

@@ -1,104 +1,156 @@
-import fs from 'fs';
+import { detectRuntimeCapabilities } from './capabilities.js';
 import { discoverSclangPath } from './discover.js';
 import {
+  DriverOptions,
+  SclangControllerLike,
+} from './driver-interfaces.js';
+import {
+  EngineKind,
+  EnginePreference,
   DriverErrorKind,
   DriverResult,
   DriverState,
   HealthSnapshot,
+  RequestedSampleFormat,
   RenderArtifact,
+  RuntimeCapabilities,
   SessionSnapshot,
 } from './driver-types.js';
 import {
   buildEvalScript,
   buildPingScript,
-  buildRenderStartScript,
-  buildRenderStopScript,
   buildResetScript,
   buildServerRunningScript,
-  buildWaitForBootScript,
   containsScRuntimeError,
   makeMarker,
 } from './protocol.js';
+import { runNrtRenderCommand } from './render-nrt-driver.js';
+import { runNrtRender } from './render-nrt.js';
+import { runDraftRender } from './render-draft.js';
 import {
-  RunScriptOptions,
-  ScriptRunResult,
+  buildEvalLikeResult,
+  ensureReadyController,
+  SessionLifecycleHost,
+  stopAndClearController,
+} from './session-lifecycle.js';
+import {
   SclangController,
   SclangControllerOptions,
 } from './sclang.js';
 
-export interface SclangControllerLike {
-  boot(): Promise<void>;
-  clearUnexpectedExitError(): void;
-  getLogs(): string;
-  getLogsTail(tail: number): string;
-  getUnexpectedExitError(): Error | null;
-  hasProcess(): boolean;
-  isBusy(): boolean;
-  runScript(script: string, options: RunScriptOptions): Promise<ScriptRunResult>;
-  stop(): Promise<void>;
-}
-
-export interface DriverOptions {
-  createController?: (
-    sclangPath: string,
-    options?: SclangControllerOptions,
-  ) => SclangControllerLike;
-  discoverPath?: () => string | null;
-  executeTimeoutMs?: number;
-  sleep?: (ms: number) => Promise<void>;
-}
-
-interface ReadyControllerResult {
-  controller: SclangControllerLike;
-  rawOutput: string;
-}
+export type { SclangControllerLike, DriverOptions } from './driver-interfaces.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createSessionId(): string {
-  return `scctl-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-}
-
-export class ScDriver {
+export class ScDriver implements SessionLifecycleHost {
   private controller: SclangControllerLike | null = null;
-  private readonly createController;
-  private readonly discoverPath;
-  private readonly executeTimeoutMs: number;
-  private readonly sleepMs;
+  private readonly createControllerFn;
+  private readonly discoverPathFn;
+  private readonly executeTimeoutMsValue: number;
+  private readonly detectCapabilitiesFn;
+  public get runNrt(): typeof runNrtRender {
+    return this.runNrtFn;
+  }
+
+  private readonly runNrtFn;
+  private readonly sleepFn;
   private state: DriverState = 'idle';
   private phase = 'idle';
   private sessionId: string | null = null;
   private lastErrorKind: DriverErrorKind | null = null;
 
   constructor(options: DriverOptions = {}) {
-    this.createController =
+    this.createControllerFn =
       options.createController ??
       ((sclangPath: string, controllerOptions?: SclangControllerOptions) =>
         new SclangController(sclangPath, controllerOptions));
-    this.discoverPath = options.discoverPath ?? (() => discoverSclangPath());
-    this.executeTimeoutMs = options.executeTimeoutMs ?? 120_000;
-    this.sleepMs = options.sleep ?? sleep;
+    this.detectCapabilitiesFn = options.detectCapabilities ?? detectRuntimeCapabilities;
+    this.discoverPathFn = options.discoverPath ?? (() => discoverSclangPath());
+    this.executeTimeoutMsValue = options.executeTimeoutMs ?? 120_000;
+    this.runNrtFn = options.runNrtRender ?? runNrtRender;
+    this.sleepFn = options.sleep ?? sleep;
+  }
+
+  public get executeTimeoutMs(): number {
+    return this.executeTimeoutMsValue;
+  }
+
+  public createController(sclangPath: string): SclangControllerLike {
+    return this.createControllerFn(sclangPath, {
+      executeTimeoutMs: this.executeTimeoutMsValue,
+    });
+  }
+
+  public discoverPath(): string | null {
+    return this.discoverPathFn();
+  }
+
+  public getController(): SclangControllerLike | null {
+    return this.controller;
+  }
+
+  public setController(controller: SclangControllerLike | null): void {
+    this.controller = controller;
+  }
+
+  public getState(): DriverState {
+    return this.state;
+  }
+
+  public setState(state: DriverState): void {
+    this.state = state;
+  }
+
+  public getPhase(): string {
+    return this.phase;
+  }
+
+  public setPhase(phase: string): void {
+    this.phase = phase;
+  }
+
+  public getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  public setSessionId(sessionId: string | null): void {
+    this.sessionId = sessionId;
+  }
+
+  public getLastErrorKind(): DriverErrorKind | null {
+    return this.lastErrorKind;
+  }
+
+  public setLastErrorKind(errorKind: DriverErrorKind | null): void {
+    this.lastErrorKind = errorKind;
+  }
+
+  public sleepMs(ms: number): Promise<void> {
+    return this.sleepFn(ms);
   }
 
   public async check(): Promise<DriverResult> {
     const sclangPath = this.discoverPath();
+    const capabilities = this.getCapabilities(sclangPath);
     if (!sclangPath) {
       return this.buildErrorResult('check', 'engine_missing', 'engine_missing', false, '', {
+        capabilities,
         summary: 'SuperCollider engine is not installed or not discoverable.',
       });
     }
 
     if (this.controller) {
       return this.buildSuccessResult('check', this.state, '', {
+        capabilities,
         summary: 'Engine is available and an active session is present.',
         session: this.snapshot(sclangPath),
       });
     }
 
-    const probeController = this.createController(sclangPath, {
-      executeTimeoutMs: this.executeTimeoutMs,
+    const probeController = this.createControllerFn(sclangPath, {
+      executeTimeoutMs: this.executeTimeoutMsValue,
     });
 
     try {
@@ -106,15 +158,17 @@ export class ScDriver {
       const doneMarker = makeMarker('check_ping');
       const probe = await probeController.runScript(buildPingScript(doneMarker), {
         completionMarkers: [doneMarker],
-        timeoutMs: this.executeTimeoutMs,
+        timeoutMs: this.executeTimeoutMsValue,
       });
 
       return this.buildSuccessResult('check', this.state, probe.rawOutput, {
+        capabilities,
         summary: 'SuperCollider engine is reachable.',
         session: this.snapshot(sclangPath),
       });
     } catch (err: any) {
       return this.buildErrorResult('check', 'degraded', 'protocol_error', true, '', {
+        capabilities,
         summary: `Engine was found but interpreter ping failed: ${err.message}`,
       });
     } finally {
@@ -143,8 +197,10 @@ export class ScDriver {
 
   public async health(): Promise<DriverResult> {
     const sclangPath = this.discoverPath();
+    const capabilities = this.getCapabilities(sclangPath);
     if (!sclangPath) {
       return this.buildErrorResult('health', 'engine_missing', 'engine_missing', false, '', {
+        capabilities,
         summary: 'SuperCollider engine is not installed or not discoverable.',
         health: this.buildHealthSnapshot(null, false, false, 'Engine path not found'),
       });
@@ -152,6 +208,7 @@ export class ScDriver {
 
     if (!this.controller) {
       return this.buildSuccessResult('health', this.state, '', {
+        capabilities,
         summary: 'Engine is available and there is no active session.',
         health: this.buildHealthSnapshot(sclangPath, false, false, null),
       });
@@ -161,6 +218,7 @@ export class ScDriver {
     if (degradedReason) {
       this.state = 'degraded';
       return this.buildErrorResult('health', 'degraded', 'process_exit', true, '', {
+        capabilities,
         summary: degradedReason,
         health: this.buildHealthSnapshot(sclangPath, false, false, degradedReason),
       });
@@ -169,6 +227,7 @@ export class ScDriver {
     if (this.controller.isBusy()) {
       this.state = 'busy';
       return this.buildSuccessResult('health', 'busy', '', {
+        capabilities,
         summary: 'Session is busy; returning the last known health snapshot.',
         health: this.buildHealthSnapshot(sclangPath, this.controller.hasProcess(), true, null),
       });
@@ -182,7 +241,7 @@ export class ScDriver {
         buildServerRunningScript(readyMarker, notReadyMarker),
         {
           completionMarkers: [readyMarker, notReadyMarker],
-          timeoutMs: this.executeTimeoutMs,
+          timeoutMs: this.executeTimeoutMsValue,
         },
       );
 
@@ -190,6 +249,7 @@ export class ScDriver {
         this.state = 'ready';
         this.phase = 'health';
         return this.buildSuccessResult('health', 'ready', probe.rawOutput, {
+          capabilities,
           summary: 'Session is healthy and ready.',
           health: this.buildHealthSnapshot(sclangPath, true, true, null),
         });
@@ -204,6 +264,7 @@ export class ScDriver {
         true,
         probe.rawOutput,
         {
+          capabilities,
           summary: 'The active session is alive but the SuperCollider server is not ready.',
           health: this.buildHealthSnapshot(
             sclangPath,
@@ -217,6 +278,7 @@ export class ScDriver {
       this.state = 'degraded';
       this.lastErrorKind = 'protocol_error';
       return this.buildErrorResult('health', 'degraded', 'protocol_error', true, '', {
+        capabilities,
         summary: `Health probe failed: ${err.message}`,
         health: this.buildHealthSnapshot(
           sclangPath,
@@ -235,7 +297,7 @@ export class ScDriver {
       });
     }
 
-    const ready = await this.ensureReadyController('eval');
+    const ready = await ensureReadyController(this, 'eval');
     if ('success' in ready) {
       return ready;
     }
@@ -247,10 +309,10 @@ export class ScDriver {
     try {
       const result = await ready.controller.runScript(buildEvalScript(code, doneMarker), {
         completionMarkers: [doneMarker],
-        timeoutMs: this.executeTimeoutMs,
+        timeoutMs: this.executeTimeoutMsValue,
       });
 
-      return this.buildEvalLikeResult('eval', ready.rawOutput, result.rawOutput);
+      return buildEvalLikeResult(this, 'eval', ready.rawOutput, result.rawOutput);
     } catch (err: any) {
       this.state = 'degraded';
       this.lastErrorKind = 'protocol_error';
@@ -276,7 +338,7 @@ export class ScDriver {
       });
     }
 
-    const ready = await this.ensureReadyController('run_file');
+    const ready = await ensureReadyController(this, 'run_file');
     if ('success' in ready) {
       return ready;
     }
@@ -288,10 +350,10 @@ export class ScDriver {
     try {
       const result = await ready.controller.runScript(buildEvalScript(userCode, doneMarker), {
         completionMarkers: [doneMarker],
-        timeoutMs: this.executeTimeoutMs,
+        timeoutMs: this.executeTimeoutMsValue,
       });
 
-      return this.buildEvalLikeResult('run_file', ready.rawOutput, result.rawOutput);
+      return buildEvalLikeResult(this, 'run_file', ready.rawOutput, result.rawOutput);
     } catch (err: any) {
       this.state = 'degraded';
       this.lastErrorKind = 'protocol_error';
@@ -331,105 +393,17 @@ export class ScDriver {
     outPath: string;
     userCode: string;
   }): Promise<DriverResult<RenderArtifact>> {
-    const durationSec = options.durationSec ?? 5;
-    if (!options.outPath.trim()) {
-      return this.buildErrorResult('render', this.state, 'invalid_argument', false, '', {
-        summary: 'A writable output WAV path is required.',
-      });
-    }
-    if (!options.userCode.trim()) {
-      return this.buildErrorResult('render', this.state, 'invalid_argument', false, '', {
-        summary: 'Render code must not be empty.',
-      });
-    }
-    if (!Number.isFinite(durationSec) || durationSec <= 0) {
-      return this.buildErrorResult('render', this.state, 'invalid_argument', false, '', {
-        summary: 'Render duration must be a positive number.',
-      });
-    }
+    return runDraftRender(this, options);
+  }
 
-    const ready = await this.ensureReadyController('render');
-    if ('success' in ready) {
-      return ready;
-    }
-
-    this.state = 'busy';
-    this.phase = 'render';
-
-    const startMarker = makeMarker('render_start');
-    const stopMarker = makeMarker('render_stop');
-
-    try {
-      const start = await ready.controller.runScript(
-        buildRenderStartScript(
-          {
-            durationSec,
-            outPath: options.outPath,
-            userCode: options.userCode,
-          },
-          startMarker,
-        ),
-        {
-          completionMarkers: [startMarker],
-          timeoutMs: this.executeTimeoutMs,
-        },
-      );
-
-      const startOutput = this.mergeOutput(ready.rawOutput, start.rawOutput);
-      if (containsScRuntimeError(startOutput)) {
-        await this.stopAndClearController(true);
-        return this.buildErrorResult(
-          'render',
-          'stopped',
-          'sc_runtime_error',
-          true,
-          startOutput,
-          {
-            summary: 'Render setup failed because SuperCollider reported an error.',
-          },
-        );
-      }
-
-      await this.sleepMs(durationSec * 1_000);
-
-      const stop = await ready.controller.runScript(buildRenderStopScript(stopMarker), {
-        completionMarkers: [stopMarker],
-        timeoutMs: this.executeTimeoutMs,
-      });
-      const output = this.mergeOutput(startOutput, stop.rawOutput);
-
-      const bytes = fs.existsSync(options.outPath) ? fs.statSync(options.outPath).size : 0;
-      const artifact: RenderArtifact = {
-        path: options.outPath,
-        bytes,
-        duration_sec: durationSec,
-      };
-
-      await this.stopAndClearController(true);
-
-      if (containsScRuntimeError(output) || bytes <= 0) {
-        return this.buildErrorResult('render', 'stopped', 'render_failed', true, output, {
-          summary: 'Render finished without producing a valid non-empty WAV artifact.',
-          artifact,
-        });
-      }
-
-      return this.buildSuccessResult('render', 'stopped', output, {
-        summary: 'Render completed and produced a draft WAV artifact.',
-        artifact,
-      });
-    } catch (err: any) {
-      const rawOutput = ready.rawOutput;
-      await this.stopAndClearController(true);
-      return this.buildErrorResult('render', 'stopped', 'render_failed', true, rawOutput, {
-        summary: `Render flow failed: ${err.message}`,
-        artifact: {
-          path: options.outPath,
-          bytes: fs.existsSync(options.outPath) ? fs.statSync(options.outPath).size : 0,
-          duration_sec: durationSec,
-        },
-      });
-    }
+  public async renderNrt(options: {
+    durationSec?: number;
+    enginePreference?: EnginePreference;
+    outPath: string;
+    sampleFormat?: RequestedSampleFormat;
+    sourcePath: string;
+  }): Promise<DriverResult<RenderArtifact>> {
+    return runNrtRenderCommand(this, options);
   }
 
   public async stop(): Promise<DriverResult> {
@@ -445,7 +419,7 @@ export class ScDriver {
     this.phase = 'stop';
 
     try {
-      await this.stopAndClearController(false);
+      await stopAndClearController(this, false);
       return this.buildSuccessResult('stop', 'stopped', '', {
         summary: 'The active session was stopped cleanly.',
       });
@@ -470,7 +444,7 @@ export class ScDriver {
       });
     }
 
-    const ready = await this.ensureReadyController('reset');
+    const ready = await ensureReadyController(this, 'reset');
     if ('success' in ready) {
       return ready;
     }
@@ -482,7 +456,7 @@ export class ScDriver {
     try {
       const result = await ready.controller.runScript(buildResetScript(doneMarker), {
         completionMarkers: [doneMarker],
-        timeoutMs: this.executeTimeoutMs,
+        timeoutMs: this.executeTimeoutMsValue,
       });
       const output = this.mergeOutput(ready.rawOutput, result.rawOutput);
       if (containsScRuntimeError(output)) {
@@ -515,7 +489,7 @@ export class ScDriver {
     }
 
     try {
-      await this.stopAndClearController(false);
+      await stopAndClearController(this, false);
     } catch (err: any) {
       this.state = 'degraded';
       this.lastErrorKind = 'cleanup_failed';
@@ -524,7 +498,7 @@ export class ScDriver {
       });
     }
 
-    const ready = await this.ensureReadyController('reboot');
+    const ready = await ensureReadyController(this, 'reboot');
     if ('success' in ready) {
       return ready;
     }
@@ -537,9 +511,9 @@ export class ScDriver {
   }
 
   public async reclaim(): Promise<DriverResult> {
-    await this.stopAndClearController(true);
+    await stopAndClearController(this, true);
 
-    const ready = await this.ensureReadyController('reclaim');
+    const ready = await ensureReadyController(this, 'reclaim');
     if ('success' in ready) {
       return ready;
     }
@@ -551,104 +525,13 @@ export class ScDriver {
     });
   }
 
-  private async ensureReadyController(
-    phase: string,
-  ): Promise<DriverResult | ReadyControllerResult> {
-    const sclangPath = this.discoverPath();
-    if (!sclangPath) {
-      this.state = 'engine_missing';
-      this.lastErrorKind = 'engine_missing';
-      return this.buildErrorResult(phase, 'engine_missing', 'engine_missing', false, '', {
-        summary: 'SuperCollider engine is not installed or not discoverable.',
-      });
-    }
-
-    const degradedReason = this.getDegradedReason();
-    if (degradedReason) {
-      this.state = 'degraded';
-      this.lastErrorKind = 'process_exit';
-      return this.buildErrorResult(phase, 'degraded', 'process_exit', true, '', {
-        summary: degradedReason,
-      });
-    }
-
-    if (this.controller?.isBusy()) {
-      this.state = 'busy';
-      return this.buildErrorResult(phase, 'busy', 'session_conflict', true, '', {
-        summary: 'The active session is already executing another action.',
-      });
-    }
-
-    if (!this.controller) {
-      this.controller = this.createController(sclangPath, {
-        executeTimeoutMs: this.executeTimeoutMs,
-      });
-      this.sessionId = createSessionId();
-    }
-
-    this.state = 'booting';
-    this.phase = phase;
-
-    try {
-      await this.controller.boot();
-    } catch (err: any) {
-      this.state = 'degraded';
-      this.lastErrorKind = 'protocol_error';
-      return this.buildErrorResult(phase, 'degraded', 'protocol_error', true, '', {
-        summary: `Failed to boot the sclang interpreter: ${err.message}`,
-      });
-    }
-
-    const doneMarker = makeMarker(`${phase}_boot_ready`);
-    try {
-      const bootReady = await this.controller.runScript(buildWaitForBootScript(doneMarker), {
-        completionMarkers: [doneMarker],
-        timeoutMs: this.executeTimeoutMs,
-      });
-      this.state = 'ready';
-      this.lastErrorKind = null;
-      this.controller.clearUnexpectedExitError();
-      return {
-        controller: this.controller,
-        rawOutput: bootReady.rawOutput,
-      };
-    } catch (err: any) {
-      this.state = 'degraded';
-      this.lastErrorKind = 'boot_timeout';
-      return this.buildErrorResult(phase, 'degraded', 'boot_timeout', true, '', {
-        summary: `SuperCollider server did not become ready in time: ${err.message}`,
-      });
-    }
-  }
-
-  private buildEvalLikeResult(
-    phase: string,
-    bootOutput: string,
-    commandOutput: string,
-  ): DriverResult {
-    const rawOutput = this.mergeOutput(bootOutput, commandOutput);
-
-    if (containsScRuntimeError(rawOutput)) {
-      this.state = 'ready';
-      this.lastErrorKind = 'sc_runtime_error';
-      return this.buildErrorResult(phase, 'ready', 'sc_runtime_error', true, rawOutput, {
-        summary: 'SuperCollider reported a runtime error while executing the command.',
-      });
-    }
-
-    this.state = 'ready';
-    this.lastErrorKind = null;
-    return this.buildSuccessResult(phase, 'ready', rawOutput, {
-      summary: 'SuperCollider executed the command successfully.',
-    });
-  }
-
-  private buildSuccessResult<TArtifact>(
+  public buildSuccessResult<TArtifact>(
     phase: string,
     state: DriverState,
     rawOutput: string,
     extras: {
       artifact?: TArtifact;
+      capabilities?: RuntimeCapabilities;
       health?: HealthSnapshot;
       session?: SessionSnapshot;
       summary: string;
@@ -665,12 +548,13 @@ export class ScDriver {
       summary: extras.summary,
       raw_output: rawOutput,
       artifact: extras.artifact,
+      capabilities: extras.capabilities,
       health: extras.health,
-      session: extras.session,
+      session: extras.session ?? this.snapshot(this.discoverPath()),
     };
   }
 
-  private buildErrorResult<TArtifact>(
+  public buildErrorResult<TArtifact>(
     phase: string,
     state: DriverState,
     errorKind: DriverErrorKind,
@@ -678,6 +562,7 @@ export class ScDriver {
     rawOutput: string,
     extras: {
       artifact?: TArtifact;
+      capabilities?: RuntimeCapabilities;
       health?: HealthSnapshot;
       session?: SessionSnapshot;
       summary: string;
@@ -695,8 +580,34 @@ export class ScDriver {
       summary: extras.summary,
       raw_output: rawOutput,
       artifact: extras.artifact,
+      capabilities: extras.capabilities,
       health: extras.health,
-      session: extras.session,
+      session: extras.session ?? this.snapshot(this.discoverPath()),
+    };
+  }
+
+  public getDegradedReason(): string | null {
+    const exitError = this.controller?.getUnexpectedExitError();
+    if (!exitError) {
+      return null;
+    }
+    return `The active session exited unexpectedly: ${exitError.message}`;
+  }
+
+  public mergeOutput(...chunks: string[]): string {
+    return chunks.filter(Boolean).join('\n').trim();
+  }
+
+  public snapshot(enginePath: string | null): SessionSnapshot {
+    return {
+      state: this.state,
+      phase: this.phase,
+      session_id: this.sessionId,
+      engine_path: enginePath,
+      has_controller: this.controller !== null,
+      busy: this.controller?.isBusy() ?? false,
+      last_error_kind: this.lastErrorKind,
+      recoverable: this.state !== 'engine_missing',
     };
   }
 
@@ -715,52 +626,24 @@ export class ScDriver {
     };
   }
 
-  private snapshot(enginePath: string | null): SessionSnapshot {
-    return {
-      state: this.state,
-      phase: this.phase,
-      session_id: this.sessionId,
-      engine_path: enginePath,
-      has_controller: this.controller !== null,
-      busy: this.controller?.isBusy() ?? false,
-      last_error_kind: this.lastErrorKind,
-      recoverable: this.state !== 'engine_missing',
-    };
+  public getCapabilities(sclangPath: string | null): RuntimeCapabilities {
+    return this.detectCapabilitiesFn(sclangPath);
   }
 
-  private getDegradedReason(): string | null {
-    const exitError = this.controller?.getUnexpectedExitError();
-    if (!exitError) {
-      return null;
-    }
-    return `The active session exited unexpectedly: ${exitError.message}`;
-  }
-
-  private mergeOutput(...chunks: string[]): string {
-    return chunks.filter(Boolean).join('\n').trim();
-  }
-
-  private async stopAndClearController(ignoreErrors: boolean): Promise<void> {
-    if (!this.controller) {
-      this.state = 'stopped';
-      this.sessionId = null;
-      return;
+  public resolveNrtEngine(
+    preference: EnginePreference,
+    capabilities: RuntimeCapabilities,
+  ): { kind: EngineKind; path: string } | null {
+    if (preference === 'supernova') {
+      return capabilities.supernova.available && capabilities.supernova.path
+        ? { kind: 'supernova', path: capabilities.supernova.path }
+        : null;
     }
 
-    const controller = this.controller;
-    this.controller = null;
-    this.sessionId = null;
-
-    try {
-      await controller.stop();
-      this.state = 'stopped';
-      this.lastErrorKind = null;
-    } catch (err) {
-      this.state = 'degraded';
-      this.lastErrorKind = 'cleanup_failed';
-      if (!ignoreErrors) {
-        throw err;
-      }
+    if (capabilities.scsynth.available && capabilities.scsynth.path) {
+      return { kind: 'scsynth', path: capabilities.scsynth.path };
     }
+
+    return null;
   }
 }

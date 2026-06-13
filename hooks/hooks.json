@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "description": "SuperCollider Pilot governed-runtime guardrails for agent harness audit and IDE hooks.",
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node hooks/scctl-session-start.js"
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node hooks/scctl-governed-preflight.js",
+        "matcher": "sc_eval|sc_run_file|sc_render|sc_render_nrt"
+      }
+    ]
+  }
+}
