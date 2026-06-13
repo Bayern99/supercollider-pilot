@@ -62,6 +62,50 @@ export async function runNrtRenderCommand(
   const outPath = options.outPath.trim();
   const enginePreference = options.enginePreference ?? 'auto';
   const sampleFormat = options.sampleFormat ?? 'float';
+
+  if (!sourcePath) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'An absolute .scd source path is required for NRT rendering.',
+    });
+  }
+  if (!path.isAbsolute(sourcePath)) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'NRT rendering requires an absolute .scd source path.',
+    });
+  }
+  if (!sourcePath.toLowerCase().endsWith('.scd')) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'NRT rendering only accepts .scd source files.',
+    });
+  }
+  if (!outPath) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'An absolute output WAV path is required for NRT rendering.',
+    });
+  }
+  if (!path.isAbsolute(outPath)) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'NRT rendering requires an absolute output WAV path.',
+    });
+  }
+  try {
+    const stat = fs.statSync(sourcePath);
+    if (!stat.isFile()) {
+      return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+        summary: `Path is not a regular file: ${sourcePath}`,
+      });
+    }
+  } catch {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: `File not found: ${sourcePath}`,
+    });
+  }
+  if (!['float', 'double'].includes(sampleFormat)) {
+    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
+      summary: 'NRT sample_format must be float or double.',
+    });
+  }
+
   const sclangPath = host.discoverPath();
   const capabilities = host.getCapabilities(sclangPath);
 
@@ -70,56 +114,6 @@ export async function runNrtRenderCommand(
     return host.buildErrorResult('render_nrt', 'engine_missing', 'engine_missing', false, '', {
       capabilities,
       summary: 'SuperCollider engine is not installed or not discoverable.',
-    });
-  }
-  if (!sourcePath) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'An absolute .scd source path is required for NRT rendering.',
-    });
-  }
-  if (!path.isAbsolute(sourcePath)) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'NRT rendering requires an absolute .scd source path.',
-    });
-  }
-  if (!sourcePath.toLowerCase().endsWith('.scd')) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'NRT rendering only accepts .scd source files.',
-    });
-  }
-  if (!outPath) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'An absolute output WAV path is required for NRT rendering.',
-    });
-  }
-  if (!path.isAbsolute(outPath)) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'NRT rendering requires an absolute output WAV path.',
-    });
-  }
-  try {
-    const stat = fs.statSync(sourcePath);
-    if (!stat.isFile()) {
-      return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-        capabilities,
-        summary: `Path is not a regular file: ${sourcePath}`,
-      });
-    }
-  } catch {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: `File not found: ${sourcePath}`,
-    });
-  }
-  if (!['float', 'double'].includes(sampleFormat)) {
-    return host.buildErrorResult('render_nrt', host.getState(), 'invalid_argument', false, '', {
-      capabilities,
-      summary: 'NRT sample_format must be float or double.',
     });
   }
 
