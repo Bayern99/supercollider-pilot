@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> Branch `codex/agent-harness-narrow-roles` — not yet on `main`. See [docs/MERGE-READINESS.md](docs/MERGE-READINESS.md) before merging.
+## [1.1.0] - 2026-06-13
 
 ### Added
 
@@ -57,5 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Obsolete `src/runtime/render.ts` and `src/runtime/server-probe.ts` paths
 
-[Unreleased]: https://github.com/Bayern99/supercollider-pilot/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Bayern99/supercollider-pilot/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Bayern99/supercollider-pilot/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Bayern99/supercollider-pilot/releases/tag/v1.0.0

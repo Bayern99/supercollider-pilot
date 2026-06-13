@@ -80,7 +80,7 @@ function getOrchestrationService(): OrchestrationService {
 export const server = new Server(
   {
     name: 'supercollider-pilot',
-    version: '1.0.0',
+    version: '1.1.0',
   },
   {
     capabilities: {
