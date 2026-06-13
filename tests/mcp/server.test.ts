@@ -619,4 +619,45 @@ describe('Pilot MCP server', () => {
     expect(driver.reclaim).toHaveBeenCalled();
     expect(driver.stop).toHaveBeenCalled();
   });
+
+  it('blocks raw runtime tools when SCCTL_GOVERNED_ROLE is set', async () => {
+    const callToolHandler = (server as any)._requestHandlers.get('tools/call');
+    const driver = getActiveDriver() as any;
+    const previousRole = process.env.SCCTL_GOVERNED_ROLE;
+    process.env.SCCTL_GOVERNED_ROLE = 'builder';
+
+    try {
+      const blocked = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: { name: 'sc_eval', arguments: { code: '1+1' } },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(blocked.isError).toBe(true);
+      expect(blocked.content[0].text).toContain('governance_violation');
+      expect(blocked.content[0].text).toContain('sc_eval');
+      expect(driver.eval).not.toHaveBeenCalled();
+
+      const allowed = await callToolHandler(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'sc_run_probe',
+            arguments: { spec: { family_id: 'test', probe_path: 'sc/families/x/probe.scd' } },
+          },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(allowed.content[0].text).not.toContain('governance_violation');
+    } finally {
+      if (previousRole === undefined) {
+        delete process.env.SCCTL_GOVERNED_ROLE;
+      } else {
+        process.env.SCCTL_GOVERNED_ROLE = previousRole;
+      }
+    }
+  });
 });

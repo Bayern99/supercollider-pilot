@@ -26,7 +26,36 @@ node dist/cli.js health
 | Final-quality WAV | `render-nrt` / `sc_render_nrt` or governed `run-probe` with `render_nrt` | using draft render as final artifact |
 | Long-horizon creative loop | `prepare-handoff` → `run-probe` → `summarize-session` → `candidate-action` → `audit-session` → `memory-summary` | raw runtime tools only |
 
-Raw runtime tools remain available as **operator/debug** surfaces. They return optional `compliance` when `task_tag` is supplied, but they do **not** hard-block execution. See [route-enforcement-rules.md](../design/route-enforcement-rules.md).
+Raw runtime tools remain available as **operator/debug** surfaces by default. They return optional `compliance` when `task_tag` is supplied. See [route-enforcement-rules.md](../design/route-enforcement-rules.md).
+
+## Governed mode (opt-in hard enforcement)
+
+Enable in-process role RBAC when simulating narrow agent roles:
+
+| Variable | Values | Effect |
+|----------|--------|--------|
+| `SCCTL_GOVERNED_ROLE` | `manager`, `builder`, `critic` | MCP/CLI reject tools outside the role allowlist in [`role-tool-policies.json`](superpowers/kb/role-tool-policies.json) |
+| `SCCTL_FINAL_NRT` | `1` / `true` | Also reject draft `render` / `sc_render` while governed mode is active |
+
+Canonical policy source: `src/harness/role-policies.ts` (loads the JSON above).
+
+Examples:
+
+```bash
+# Builder may use sc_run_probe but not raw eval
+SCCTL_GOVERNED_ROLE=builder node dist/cli.js eval "1+1"   # rejected
+
+# Operator/debug (default): unchanged
+node dist/cli.js eval "1+1"
+```
+
+After a successful `prepare-handoff`, Pilot writes `.scctl/governed-role` (gitignored) so Cursor hooks can block raw MCP tools even without env vars:
+
+- Repo hook entry: `hooks/hooks.json`
+- Cursor hook entry: `.cursor/hooks.json`
+- Preflight script: `hooks/scctl-governed-preflight.js`
+
+Harness audit expects `hooks/hooks.json` to exist (`node scripts/harness-audit.js repo --format text`).
 
 Governed workflow and orchestration tools are the **default for creative tasks** that must leave an archive trail.
 

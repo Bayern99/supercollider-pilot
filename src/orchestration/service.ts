@@ -1,6 +1,8 @@
 import { ArchiveRecord } from '../archive/archive-types.js';
 import { ArchiveStore } from '../archive/archive-store.js';
 import { normalizeTaskTag } from '../harness/task-tags.js';
+import { getRoleToolPolicy } from '../harness/role-policies.js';
+import { writeGovernedSessionMarker } from '../harness/governed-session-marker.js';
 import { CandidateRegistry } from '../lab/candidate-registry.js';
 import type {
   CandidateLifecycleAction,
@@ -156,6 +158,11 @@ export class OrchestrationService {
       memorySummary.payload.memory_summary,
     );
     const rolePackets = buildRolePackets(input, workflowPlan.payload, normalizedTaskTag);
+
+    writeGovernedSessionMarker(process.cwd(), {
+      final_nrt: finalNrtRequestedFromPlan(workflowPlan.payload, input),
+      task_id: input.task_id,
+    });
 
     return this.success('prepare_handoff', 'Governed handoff prepared.', {
       task: {
@@ -443,6 +450,16 @@ function buildWorkflowContext(
   };
 }
 
+function finalNrtRequestedFromPlan(
+  workflowPlan: PrepareHandoffPayload['workflow_plan'],
+  task: TaskEnvelope,
+): boolean {
+  return (
+    task.quality?.render_tier === 'final_nrt'
+    || workflowPlan.selection.recommended_execution_mode === 'render_nrt'
+  );
+}
+
 function buildRolePackets(
   task: TaskEnvelope,
   workflowPlan: PrepareHandoffPayload['workflow_plan'],
@@ -452,23 +469,14 @@ function buildRolePackets(
   const finalNrtRequested =
     task.quality?.render_tier === 'final_nrt'
     || workflowPlan.selection.recommended_execution_mode === 'render_nrt';
+  const managerPolicy = getRoleToolPolicy('manager');
+  const builderPolicy = getRoleToolPolicy('builder', { finalNrtRequested });
+  const criticPolicy = getRoleToolPolicy('critic');
   const manager: RolePacket = {
     role: 'manager',
     objective: managerObjective(task.goal, workflow),
-    allowed_tools: [
-      'sc_prepare_handoff',
-      'sc_memory_summary',
-      'sc_summarize_session',
-      'sc_candidate_action',
-    ],
-    forbidden_paths: [
-      'sc_eval',
-      'sc_run_file',
-      'sc_render',
-      'sc_render_nrt',
-      'direct_supercollider_execution',
-      'promotion_without_explicit_review',
-    ],
+    allowed_tools: [...managerPolicy.allowed_tools],
+    forbidden_paths: [...managerPolicy.forbidden_paths],
     required_outputs: [
       'workflow_plan',
       'kb_snapshot',
@@ -483,15 +491,8 @@ function buildRolePackets(
   const builder: RolePacket = {
     role: 'builder',
     objective: builderObjective(task.goal, workflow, finalNrtRequested),
-    allowed_tools: finalNrtRequested ? ['sc_run_probe', 'sc_render_nrt'] : ['sc_run_probe'],
-    forbidden_paths: [
-      'sc_eval',
-      'sc_run_file',
-      'sc_render',
-      ...(finalNrtRequested ? [] : ['sc_render_nrt']),
-      'python_or_external_audio_sidecars',
-      'direct_candidate_lifecycle_mutation',
-    ],
+    allowed_tools: [...builderPolicy.allowed_tools],
+    forbidden_paths: [...builderPolicy.forbidden_paths],
     required_outputs: [
       workflow === 'render_qa' || workflow === 'candidate_promotion'
         ? 'probe_run_result_if_manager_requests_retry'
@@ -508,19 +509,8 @@ function buildRolePackets(
   const critic: RolePacket = {
     role: 'critic',
     objective: criticObjective(workflow),
-    allowed_tools: [
-      'sc_audit_session',
-      'sc_candidate_action:add_review',
-      'sc_memory_summary',
-    ],
-    forbidden_paths: [
-      'sc_eval',
-      'sc_run_file',
-      'sc_render',
-      'sc_render_nrt',
-      'sc_run_probe',
-      'direct_supercollider_execution',
-    ],
+    allowed_tools: [...criticPolicy.allowed_tools],
+    forbidden_paths: [...criticPolicy.forbidden_paths],
     required_outputs: [
       'audit_verdict',
       workflow === 'probe' ? 'review_note_if_escalation_is_needed' : 'review_note',

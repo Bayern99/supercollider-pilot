@@ -314,4 +314,15 @@ describe('CLI shell interface', () => {
       },
     });
   });
+
+  it('blocks raw eval when SCCTL_GOVERNED_ROLE=builder', () => {
+    const { exitCode, stdout } = runCli('eval "1+1"', {
+      SCCTL_GOVERNED_ROLE: 'builder',
+    });
+    const result = parseJsonOutput(stdout);
+
+    expect(exitCode).toBe(1);
+    expect(result.summary).toContain('Governed role "builder"');
+    expect(result.summary).toContain('sc_eval');
+  });
 });

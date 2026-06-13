@@ -31,8 +31,10 @@
 
 ## Honest limits
 
-- **Soft route enforcement:** optional `task_tag` returns a `compliance` snapshot, but MCP/CLI do not hard-block invalid routes before execution.
+- **Soft route enforcement by default:** optional `task_tag` returns a `compliance` snapshot; MCP/CLI do not hard-block invalid routes unless governed mode is enabled (see below).
+- **Opt-in MCP/CLI RBAC (Phase 7.1):** set `SCCTL_GOVERNED_ROLE=manager|builder|critic` to enforce role tool allowlists in-process. Unset = operator/debug behavior unchanged.
+- **Opt-in final_nrt hardening:** set `SCCTL_FINAL_NRT=1` with a governed role to reject draft `sc_render` / `render` in addition to role forbidden lists.
+- **IDE hooks:** `hooks/hooks.json` + `.cursor/hooks.json` call `hooks/scctl-governed-preflight.js` before raw MCP runtime tools when `.scctl/governed-role` or `SCCTL_GOVERNED_ROLE` is present.
 - **Audit persistence:** successful `audit_session` / `audit-session` appends a `session_audit` record to the append-only archive.
-- **No MCP RBAC yet:** role allowlists are carried in handoff packets and role docs, not enforced in code.
 - **Live smoke is optional:** `npm run test:live` requires local SuperCollider and is not part of default CI.
 - **Starter SC assets:** `sc/families/*/candidate-summary.md` may be filled for one reference family; others remain templates until dogfood sessions land.

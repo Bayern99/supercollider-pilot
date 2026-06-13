@@ -114,17 +114,21 @@ Plan H: Pilot Hardening
   → Phase 7A: NRT Core + Capability Registry
   → Phase 7B: Quality Eval + Governed Final Render
   → Phase 7C: Primitive Bootstrap + Real Artifact Growth
+  → Phase 7.1: Governance Hardening (opt-in RBAC + hooks)
 ```
 
 | 计划 | 当前优先级 | 主要文件 |
 |------|------------|----------|
 | **Plan H / A / B / C** | 已有绿色基线 | `src/runtime/*`, `src/harness/*`, `src/lab/*`, `src/archive/*`, `src/evals/*`, `src/planner/*`, `src/workflow/service.ts` |
 | **Agent Harness & Narrow Roles** | 已完成首轮收口 | `src/orchestration/*`, `docs/superpowers/kb/*`, `docs/superpowers/roles/*`, CLI/MCP governance tools |
-| **Phase 7 Broad Quality Expansion** | 现在 | `src/runtime/*`, `src/evals/*`, `src/workflow/*`, `src/orchestration/*`, `sc/*`, docs/KB/roles |
+| **Phase 7 Broad Quality Expansion** | 已完成主体 | `src/runtime/*`, `src/evals/*`, `src/workflow/*`, `src/orchestration/*`, `sc/*`, docs/KB/roles |
+| **Phase 7.1 Governance Hardening** | 现在 | `src/harness/role-policies.ts`, `src/transport/governance.ts`, `hooks/*`, `.cursor/hooks.json` |
 
 关键约束：
 
-- raw `sc_eval / sc_run_file / sc_render` 保持为 operator/debug surface。
+- raw `sc_eval / sc_run_file / sc_render` 保持为 operator/debug surface（默认不阻断）。
+- 设置 `SCCTL_GOVERNED_ROLE` 时，MCP/CLI 按 [`role-tool-policies.json`](docs/superpowers/kb/role-tool-policies.json) 阻断 forbidden raw tools。
+- `prepare_handoff` 成功后会写入 `.scctl/governed-role`，供 Cursor hooks 与 preflight 脚本感知 governed session。
 - raw `sc_render_nrt` 是 final-quality runtime surface，但仍不替代 governed workflow。
 - 受治理的创作 loop 默认走 orchestration + workflow tools。
 - 不把 orchestration 逻辑回流到 runtime。

@@ -9,6 +9,10 @@ import { DriverResult } from '../runtime/driver-types.js';
 import { ScDriver } from '../runtime/driver.js';
 import { readScdFile } from '../runtime/sc-file.js';
 import { attachCompletion } from '../transport/completion.js';
+import {
+  buildGovernanceErrorPayload,
+  checkTransportGovernance,
+} from '../transport/governance.js';
 import { WorkflowService } from '../workflow/service.js';
 
 const AGENT_SC_RULE =
@@ -443,6 +447,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { arguments: args, name } = request.params;
+
+  const governanceViolation = checkTransportGovernance(name);
+  if (governanceViolation) {
+    return asJsonToolResult(buildGovernanceErrorPayload(governanceViolation), true);
+  }
 
   if (name === 'sc_check') {
     return asToolResult(await activeDriver.check());

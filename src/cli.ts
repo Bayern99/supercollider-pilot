@@ -5,6 +5,11 @@ import { ScDriver } from './runtime/driver.js';
 import { DriverResult } from './runtime/driver-types.js';
 import { readScdFile } from './runtime/sc-file.js';
 import { attachCompletion } from './transport/completion.js';
+import {
+  buildGovernanceDriverResult,
+  checkTransportGovernance,
+  cliCommandToGovernedTool,
+} from './transport/governance.js';
 import { WorkflowService } from './workflow/service.js';
 
 const driver = new ScDriver();
@@ -20,6 +25,21 @@ program
 function printResult(result: DriverResult<unknown>): never {
   console.log(JSON.stringify(result, null, 2));
   process.exit(result.success ? 0 : 1);
+}
+
+function guardGovernedCliCommand(commandName: string, phase: string): boolean {
+  const toolName = cliCommandToGovernedTool(commandName);
+  if (!toolName) {
+    return true;
+  }
+
+  const violation = checkTransportGovernance(toolName);
+  if (!violation) {
+    return true;
+  }
+
+  printResult(buildGovernanceDriverResult(violation, phase));
+  return false;
 }
 
 function printJson(result: unknown, success = true): never {
@@ -52,6 +72,9 @@ program
   .command('eval <code>')
   .description('Evaluate inline SuperCollider code in the driver session')
   .action(async (code: string) => {
+    if (!guardGovernedCliCommand('eval', 'eval')) {
+      return;
+    }
     printResult(await driver.eval(code));
   });
 
@@ -60,6 +83,9 @@ program
   .description('Read and evaluate a .scd file in the driver session')
   .option('--task-tag <tag>', 'Optional task tag for route enforcement reporting')
   .action(async (file: string, options: { taskTag?: string }) => {
+    if (!guardGovernedCliCommand('run', 'run_file')) {
+      return;
+    }
     const result = await driver.runFile(file, readScdFile);
     printResult(
       attachCompletion(
@@ -93,6 +119,9 @@ program
   .option('-d, --duration <seconds>', 'Draft render duration in seconds', '5')
   .option('--task-tag <tag>', 'Optional task tag for route enforcement reporting')
   .action(async (file: string, options: { duration: string; out: string; taskTag?: string }) => {
+    if (!guardGovernedCliCommand('render', 'render')) {
+      return;
+    }
     const durationSec = parseFloat(options.duration);
     let userCode = '';
 
@@ -159,6 +188,9 @@ program
         taskTag?: string;
       },
     ) => {
+      if (!guardGovernedCliCommand('render-nrt', 'render_nrt')) {
+        return;
+      }
       const durationSec = options.duration ? parseFloat(options.duration) : undefined;
       const result = await driver.renderNrt({
         durationSec,

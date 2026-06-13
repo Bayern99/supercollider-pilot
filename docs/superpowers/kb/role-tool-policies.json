@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "universal_diagnostic_tools": [
+    "sc_check",
+    "sc_status",
+    "sc_health",
+    "sc_logs",
+    "sc_stop",
+    "sc_reset",
+    "sc_reboot",
+    "sc_reclaim"
+  ],
+  "governed_workflow_tools": [
+    "sc_plan_workflow",
+    "sc_prepare_handoff",
+    "sc_run_probe",
+    "sc_summarize_session",
+    "sc_candidate_action",
+    "sc_memory_summary",
+    "sc_audit_session"
+  ],
+  "roles": {
+    "manager": {
+      "allowed_tools": [
+        "sc_prepare_handoff",
+        "sc_memory_summary",
+        "sc_summarize_session",
+        "sc_candidate_action"
+      ],
+      "forbidden_paths": [
+        "sc_eval",
+        "sc_run_file",
+        "sc_render",
+        "sc_render_nrt",
+        "direct_supercollider_execution",
+        "promotion_without_explicit_review"
+      ]
+    },
+    "builder": {
+      "default": {
+        "allowed_tools": ["sc_run_probe"],
+        "forbidden_paths": [
+          "sc_eval",
+          "sc_run_file",
+          "sc_render",
+          "sc_render_nrt",
+          "python_or_external_audio_sidecars",
+          "direct_candidate_lifecycle_mutation"
+        ]
+      },
+      "final_nrt": {
+        "allowed_tools": ["sc_run_probe", "sc_render_nrt"],
+        "forbidden_paths": [
+          "sc_eval",
+          "sc_run_file",
+          "sc_render",
+          "python_or_external_audio_sidecars",
+          "direct_candidate_lifecycle_mutation"
+        ]
+      }
+    },
+    "critic": {
+      "allowed_tools": [
+        "sc_audit_session",
+        "sc_candidate_action",
+        "sc_memory_summary"
+      ],
+      "forbidden_paths": [
+        "sc_eval",
+        "sc_run_file",
+        "sc_render",
+        "sc_render_nrt",
+        "sc_run_probe",
+        "direct_supercollider_execution"
+      ]
+    }
+  },
+  "final_nrt_global_forbidden": ["sc_render"]
+}
