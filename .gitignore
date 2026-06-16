@@ -13,6 +13,9 @@ coverage/
 # Local archive / runtime state
 .scctl/
 
+# Skill eval outputs (local only; see docs/guides/agent-skills-spec.zh-CN.md)
+docs/_artifacts/
+
 # Environment
 .env
 .env.*

@@ -31,7 +31,7 @@ node dist/cli.js check   # requires SuperCollider installed
 4. Update [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]` for user-visible changes
 5. Open a PR with a clear description and test plan
 
-Feature integration checklist: [docs/MERGE-READINESS.md](docs/MERGE-READINESS.md)
+Feature integration checklist: [CONTRIBUTING.md](CONTRIBUTING.md) pull request process · [status.md](docs/superpowers/status.md) for baseline
 
 ## Commit messages
 
@@ -51,11 +51,13 @@ Use concise, imperative subject lines (Conventional Commits):
 
 | Audience | Start here |
 |----------|------------|
+| **Everyone** | **[docs/README.zh-CN.md](docs/README.zh-CN.md)** (full map) · [docs/README.md](docs/README.md) |
 | Consumer project setup | [docs/guides/consumer-bootstrap.zh-CN.md](docs/guides/consumer-bootstrap.zh-CN.md) |
 | Governed workflow | [docs/guides/governed-pilot-tutorial.zh-CN.md](docs/guides/governed-pilot-tutorial.zh-CN.md) |
 | Operators | [docs/operator-runbook.md](docs/operator-runbook.md) |
 | Code contributors | [AGENTS.md](AGENTS.md) |
-| Design / research | [docs/design/README.md](docs/design/README.md) |
+| Design specs | [docs/README.zh-CN.md](docs/README.zh-CN.md) (design table) |
+| Current progress | [docs/superpowers/status.md](docs/superpowers/status.md) |
 
 ## Design notes
 

@@ -41,8 +41,9 @@ AGENTS.md = 改本仓库代码的边界
 docs/guides/
   agent-skills-spec.zh-CN.md
   governed-pilot-tutorial.zh-CN.md
-  skill-eval-workspace/      # skill TDD 评测产物（可 gitignore 大体积 iteration）
 ```
+
+Skill 评测产物（非指南，不进 git）→ 本地 `docs/_artifacts/skill-eval-workspace/`（见 `.gitignore`）
 
 项目 skill **只**放在 `.agents/skills/`。IDE 专用配置（如 Cursor hooks）留在 `.cursor/`；不把 skills 与单一 IDE 目录绑定。个人全局 skill 仍用 `~/.agents/skills/`，勿与仓库根 `skills/` 混用。
 
@@ -108,7 +109,7 @@ description: Use when [具体触发症状与场景，第三人称，不写 workf
 
 ## 6. TDD 流程（每个 skill）
 
-1. 写 2–3 个 pressure prompt → `docs/guides/skill-eval-workspace/<skill>/evals/evals.json`  
+1. 写 2–3 个 pressure prompt → 本地 `docs/_artifacts/skill-eval-workspace/<skill>/evals/evals.json`（gitignored）  
 2. 跑 without_skill baseline，记录 rationalizations  
 3. 写最小 SKILL.md 堵住 baseline 借口  
 4. 写 assertions（discipline skill 必须可客观检查）  

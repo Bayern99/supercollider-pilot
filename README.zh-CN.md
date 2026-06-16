@@ -257,19 +257,13 @@ prepare-handoff → run-probe → summarize-session → candidate-action / add_r
 - `check` 和 `health` 现在会返回 `sclang`、`scsynth`、`supernova`、extensions、Quarks、`sc3-plugins`、NRT 可用性等 capability 事实。
 - 原始 `sc_eval`、`sc_run_file`、`sc_render` 继续保留为 operator/debug surface；`sc_render_nrt` 是显式的 final-quality runtime surface。正式受治理创作流程默认走上面的 workflow tools。
 
-设计说明：
+设计说明与完整文档索引：**[docs/README.zh-CN.md](docs/README.zh-CN.md)**
 
-- [docs/guides/governed-pilot-tutorial.zh-CN.md](docs/guides/governed-pilot-tutorial.zh-CN.md) — 使用流、consumer 接入、Prompt
-- [docs/guides/agent-skills-spec.zh-CN.md](docs/guides/agent-skills-spec.zh-CN.md) — `.agents/skills/` 规范
-- [AGENTS.md](AGENTS.md) — 贡献者模块边界
-- [docs/operator-runbook.zh-CN.md](docs/operator-runbook.zh-CN.md) · [English](docs/operator-runbook.md)
-- [docs/design/scctl-scope-enhancement.md](docs/design/scctl-scope-enhancement.md)
-- [docs/design/boundary-freeze.md](docs/design/boundary-freeze.md)
-- [docs/design/route-enforcement-rules.md](docs/design/route-enforcement-rules.md)
-- [docs/design/primitive-lab-spec.md](docs/design/primitive-lab-spec.md)
-- [docs/design/candidate-lifecycle.md](docs/design/candidate-lifecycle.md)
-- [docs/design/eval-rubric.md](docs/design/eval-rubric.md)
-- [docs/design/planner-spec.md](docs/design/planner-spec.md)
+常用链接：
+
+- [governed-pilot-tutorial](docs/guides/governed-pilot-tutorial.zh-CN.md) — 使用流与 consumer 接入
+- [operator-runbook](docs/operator-runbook.zh-CN.md) — operator/debug vs governed
+- [route-enforcement-rules](docs/design/route-enforcement-rules.md) — task tag 规范
 
 ### 冒烟测试（需本机安装 SuperCollider）
 

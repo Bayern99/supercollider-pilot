@@ -1,7 +1,5 @@
 # 周易 / SuperCollider Agent 评估报告
 
-[English](zhouyi-supercollider-agent-assessment.md) | [简体中文](zhouyi-supercollider-agent-assessment.zh-CN.md)
-
 Date: 2026-06-13  
 Repo: `supercollider-pilot`  
 Audience: internal

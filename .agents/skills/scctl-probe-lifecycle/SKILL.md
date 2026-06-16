@@ -16,7 +16,7 @@ Probes explore sound hypotheses; candidates and reviews turn probes into governe
 - promote, reject, or review candidate
 - reading `.scctl/archive/` history
 
-Design docs: [`docs/design/primitive-lab-spec.md`](../../../docs/design/primitive-lab-spec.md), [`docs/design/candidate-lifecycle.md`](../../../docs/design/candidate-lifecycle.md)
+Design doc: [`docs/design/lab-and-candidates.md`](../../../docs/design/lab-and-candidates.md)
 
 ## Quick Reference
 
