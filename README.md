@@ -257,20 +257,13 @@ Typical operator/debug loop: `sc_check` → `sc_status`/`sc_health` → `sc_eval
 - `check` and `health` now report capability facts for `sclang`, `scsynth`, `supernova`, extension paths, Quarks paths, detected `sc3-plugins`, and NRT availability.
 - Raw `sc_eval`, `sc_run_file`, and `sc_render` remain the operator/debug surface. `sc_render_nrt` is the explicit final-quality runtime surface. Managed creative workflows should default to the governed workflow tools above.
 
-Design specs:
+Documentation index: **[docs/README.md](docs/README.md)** · [中文版](docs/README.zh-CN.md)
 
-- [docs/guides/consumer-bootstrap.zh-CN.md](docs/guides/consumer-bootstrap.zh-CN.md) — consumer checklist + bootstrap script
-- [docs/guides/governed-pilot-tutorial.zh-CN.md](docs/guides/governed-pilot-tutorial.zh-CN.md) — usage flow, consumer bootstrap, prompts
-- [docs/guides/agent-skills-spec.zh-CN.md](docs/guides/agent-skills-spec.zh-CN.md) — project skills in `.agents/skills/`
-- [AGENTS.md](AGENTS.md) — module boundaries for contributors
-- [docs/operator-runbook.md](docs/operator-runbook.md)
-- [docs/design/scctl-scope-enhancement.md](docs/design/scctl-scope-enhancement.md)
-- [docs/design/boundary-freeze.md](docs/design/boundary-freeze.md)
-- [docs/design/route-enforcement-rules.md](docs/design/route-enforcement-rules.md)
-- [docs/design/primitive-lab-spec.md](docs/design/primitive-lab-spec.md)
-- [docs/design/candidate-lifecycle.md](docs/design/candidate-lifecycle.md)
-- [docs/design/eval-rubric.md](docs/design/eval-rubric.md)
-- [docs/design/planner-spec.md](docs/design/planner-spec.md)
+Quick links:
+
+- [governed-pilot-tutorial](docs/guides/governed-pilot-tutorial.zh-CN.md) — usage flow and consumer bootstrap
+- [operator-runbook](docs/operator-runbook.md) — operator/debug vs governed
+- [route-enforcement-rules](docs/design/route-enforcement-rules.md) — task tag policy
 
 ### Smoke test (requires local SuperCollider)
 

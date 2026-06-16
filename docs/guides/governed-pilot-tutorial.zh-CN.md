@@ -1,5 +1,7 @@
 # SuperCollider Pilot 使用指南
 
+> 文档迷路？先看 **[docs/README.zh-CN.md](../README.zh-CN.md)**（总路由表）。
+
 本文说明如何通过 Agent 调用 Pilot（`scctl`）完成 SuperCollider 音频任务。
 
 - **在新项目里接入 Pilot（先读这个）：** [consumer-bootstrap.zh-CN.md](./consumer-bootstrap.zh-CN.md) — 拉哪些文件、bootstrap 脚本、MCP 配置、每个新项目 checklist  

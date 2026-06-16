@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Differential security review for deps bump: `docs/reviews/DIFFERENTIAL_REVIEW_PR9-deps-major-bump.md`
+- Differential security review for deps bump (see GitHub PR #9)
 
 ## [1.1.0] - 2026-06-13
 
